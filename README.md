@@ -9,14 +9,15 @@
 
 ## Table of Contents
 1. [Overview & British Auction Mechanics](#overview--british-auction-mechanics)
-2. [Deliverables Checklist](#deliverables-checklist)
-3. [Architecture & System Design](#architecture--system-design)
-4. [One-Command Quick Start](#one-command-quick-start)
-5. [Demo User Credentials & Fast Persona Switcher](#demo-user-credentials--fast-persona-switcher)
-6. [Interactive Walkthrough Script](#interactive-walkthrough-script)
-7. [Authoritative Auction Engine Rules](#authoritative-auction-engine-rules)
-8. [Testing & Quality Assurance](#testing--quality-assurance)
-9. [Tech Stack](#tech-stack)
+2. [Documentation](#documentation)
+3. [Deliverables Checklist](#deliverables-checklist)
+4. [Architecture & System Design](#architecture--system-design)
+5. [One-Command Quick Start](#one-command-quick-start)
+6. [Demo User Credentials & Fast Persona Switcher](#demo-user-credentials--fast-persona-switcher)
+7. [Interactive Walkthrough Script](#interactive-walkthrough-script)
+8. [Authoritative Auction Engine Rules](#authoritative-auction-engine-rules)
+9. [Testing & Quality Assurance](#testing--quality-assurance)
+10. [Tech Stack](#tech-stack)
 
 ---
 
@@ -33,16 +34,27 @@ In global freight procurement, standard static sealed bids or fixed-deadline rev
 
 ---
 
+## Documentation
+
+The full technical and architectural specifications for the MERIDIAN British Auction RFQ Procurement Exchange are documented below:
+
+- **[High-Level Design (HLD)](docs/HLD.md)**: Simple HLD covering domain purpose, component architecture, British auction dynamic extension formula $\min(\text{effective\_close} + Y, \text{forced\_close})$, auction status lifecycle, transaction sequence diagram (`SELECT ... FOR UPDATE` row locking, commit, WebSocket broadcast), access control, complete OpenAPI route catalog, deployment, and known limitations.
+- **[Database Schema Design & Live PostgreSQL Specification](docs/SCHEMA.md)**: Relational schema generated directly from live PostgreSQL (`meridian_db`) via `pg_dump --schema-only --no-owner` and `\d+` outputs. Includes Mermaid ERD, column types, CHECK constraints (component sums, non-negative charges), partial unique composite indexes, referential integrity (`RESTRICT` on triggering bids and audit logs), and the tamper-proof append-only trigger.
+- **[System Architecture Diagram (High-Resolution)](docs/architecture.png)**: High-resolution export of the multi-tier system topology (React frontend, Nginx reverse proxy, FastAPI backend services, core auction engine, WebSocket hub, background sweeper, and PostgreSQL 16 persistence).
+
+---
+
 ## Deliverables Checklist
 
 | Deliverable | Location | Description |
 | :--- | :--- | :--- |
 | **High-Level Design (HLD)** | [`docs/HLD.md`](docs/HLD.md) | Architectural diagram (Mermaid), ACID transaction lifecycle, drift sync, RBAC matrix |
 | **Database Schema & ERD** | [`docs/SCHEMA.md`](docs/SCHEMA.md) | Entity Relationship Diagram (Mermaid), 8 relational tables, CHECK constraints, composite indexes |
+| **Architecture Diagram (PNG)** | [`docs/architecture.png`](docs/architecture.png) | High-resolution architecture export rendered with mermaid-cli |
 | **Alembic Migrations** | `backend/alembic/versions/` | Production-ready SQL schema migrations |
 | **Backend Engine & APIs** | `backend/app/` | FastAPI, SQLAlchemy 2.x, Pydantic v2, WebSockets, background daemon |
 | **Frontend Application** | `frontend/` | React 18, TypeScript, Tailwind CSS, Framer Motion, IBM Plex Mono typography |
-| **Automated Test Suites** | `backend/tests/` & `frontend/src/tests/` | 21 backend pytest tests (93% engine coverage) + 21 frontend Vitest tests (All Passing) |
+| **Automated Test Suites** | `backend/tests/` & `frontend/src/tests/` | 25 backend pytest tests (93% engine coverage) + 21 frontend Vitest tests (All Passing: 46 total) |
 | **Live Verification Suite** | `scripts/verify_live_scenarios.py` | 10 authoritative live API scenarios verified against running server |
 | **Docker Infrastructure** | `docker-compose.yml`, `Dockerfile.*` | Multi-container setup (PostgreSQL 16, FastAPI backend, Nginx frontend) |
 | **Makefile Automation** | `Makefile` | One-command targets (`make dev`, `make test`, `make seed`, `make demo`, `make verify`) |
@@ -352,7 +364,7 @@ if qualifies:
 
 Both the backend and frontend have comprehensive automated test suites:
 
-### Backend pytest Suite (21 Tests — 93% Engine Coverage)
+### Backend pytest Suite (25 Tests — 93% Engine Coverage)
 Run from root:
 ```bash
 .venv/bin/pytest backend/tests/ -v
@@ -364,6 +376,7 @@ Run from root:
 - `test_ws_ticket_and_first_message_auth`: Short-lived tickets (`POST /api/v1/auth/ws-ticket`, 60s) and first-message WebSocket auth.
 - `test_rate_limiting_returns_429`: Sliding window rate limiter returning HTTP 429 `RATE_LIMIT_EXCEEDED` on rapid bursts.
 - `test_cors_headers_and_jwt_expiry`: CORS allow-origin response and 401 on expired tokens.
+- `test_api_idempotency_cross_supplier_and_replay`: Multi-tenant scoped idempotency key isolation; cross-supplier concurrent reuse and replay.
 - `test_example_scenario_close_extension`: The PDF benchmark scenario (6:00 PM close, X=10, Y=5, 6:30 PM forced close, bid at 5:55 -> 6:05 PM, bid at 6:03 -> 6:08 PM).
 - `test_trigger_type_l1_change`: Verifies that non-L1 bids do not extend when trigger is `L1_CHANGE`.
 - `test_trigger_type_any_rank_change`: Verifies rank change criteria (bottom entrants do not trigger; swapping L2/L3 triggers).
@@ -372,6 +385,9 @@ Run from root:
 - `test_bid_validation_rejections`: Tests `BID_NOT_LOWER`, negative charges, zero ancillaries, past deadlines, and uninvited carriers.
 - `test_ranking_and_tie_breaking`: Ties broken by earlier timestamp.
 - `test_idempotency_key_replay`: Deduplication via `Idempotency-Key`.
+- `test_cross_supplier_idempotency_scope`: Partial unique index `(rfq_id, supplier_id, idempotency_key)` proof.
+- `test_bid_total_check_constraint`: PostgreSQL CHECK constraint `chk_total_equals_components` verification.
+- `test_link_integrity_on_delete_restrict`: `ON DELETE RESTRICT` enforcement on `auction_extensions.triggering_bid_id` and `auction_events.bid_id`.
 - `test_status_transitions`: Transitions to `CLOSED` vs `FORCE_CLOSED`.
 - `test_schema_forced_close_validation`: Database CHECK constraints prevent invalid auction durations.
 - `test_concurrent_bids_consistency`: Concurrent threads firing simultaneous bids to verify zero lost updates.

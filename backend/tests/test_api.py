@@ -1,4 +1,5 @@
 import json
+import uuid
 import pytest
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
@@ -567,5 +568,125 @@ def test_cors_headers_and_jwt_expiry(client, buyer_user):
         headers={"Authorization": f"Bearer {expired_token}"},
     )
     assert unauth_resp.status_code == 401
+
+
+def test_api_idempotency_cross_supplier_and_replay(client, buyer_user, suppliers, supplier_users):
+    """
+    API-level test for Idempotency-Key header:
+    1. Supplier 0 and Supplier 1 submit with the same Idempotency-Key. Both return 201 Created.
+    2. Supplier 0 replays the same key -> returns 200 OK with Supplier 0's original bid.
+    3. Supplier 1 replays the same key -> returns 200 OK with Supplier 1's original bid.
+    4. Confirms multi-tenant scoped replay prevents cross-supplier leakage.
+    """
+    buyer_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": buyer_user.email, "password": "MeridianPass2026!"},
+    )
+    buyer_token = buyer_login.json()["access_token"]
+
+    s0_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": suppliers[0].contact_email, "password": "SupplierPass2026!"},
+    )
+    s0_token = s0_login.json()["access_token"]
+
+    s1_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": suppliers[1].contact_email, "password": "SupplierPass2026!"},
+    )
+    s1_token = s1_login.json()["access_token"]
+
+    now = datetime.now(timezone.utc)
+    rfq_payload = {
+        "reference_id": f"RFQ-IDEM-{int(now.timestamp())}",
+        "title": "Idempotency API Test RFQ",
+        "origin": "Singapore (SGSIN)",
+        "destination": "Rotterdam (NLRTM)",
+        "bid_start": (now - timedelta(hours=1)).isoformat(),
+        "bid_close": (now + timedelta(hours=2)).isoformat(),
+        "forced_close": (now + timedelta(hours=3)).isoformat(),
+        "pickup_date": (now + timedelta(days=15)).isoformat(),
+        "trigger_window_minutes": 10,
+        "extension_minutes": 5,
+        "trigger_type": "L1_CHANGE",
+        "bid_visibility": "OPEN",
+        "invited_supplier_ids": [suppliers[0].id, suppliers[1].id],
+    }
+
+    create_resp = client.post(
+        "/api/v1/rfqs",
+        json=rfq_payload,
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+    assert create_resp.status_code == 201
+    rfq_id = create_resp.json()["id"]
+
+    shared_key = f"IDEM-CLIENT-SHARED-{uuid.uuid4().hex[:8]}"
+
+    # Supplier 0 submits quote with shared key -> 201
+    resp0 = client.post(
+        f"/api/v1/rfqs/{rfq_id}/bids",
+        json={
+            "freight_charges": 1500.00,
+            "origin_charges": 100.00,
+            "destination_charges": 100.00,
+            "transit_time_days": 15,
+            "quote_validity_date": (now + timedelta(days=20)).isoformat(),
+            "carrier_name": "Supplier 0 Carrier",
+        },
+        headers={"Authorization": f"Bearer {s0_token}", "Idempotency-Key": shared_key},
+    )
+    assert resp0.status_code == 201
+    s0_bid_id = resp0.json()["id"]
+
+    # Supplier 1 submits quote with the exact same shared key -> 201 (MUST NOT FAIL or leak)
+    resp1 = client.post(
+        f"/api/v1/rfqs/{rfq_id}/bids",
+        json={
+            "freight_charges": 1400.00,
+            "origin_charges": 100.00,
+            "destination_charges": 100.00,
+            "transit_time_days": 14,
+            "quote_validity_date": (now + timedelta(days=20)).isoformat(),
+            "carrier_name": "Supplier 1 Carrier",
+        },
+        headers={"Authorization": f"Bearer {s1_token}", "Idempotency-Key": shared_key},
+    )
+    assert resp1.status_code == 201
+    s1_bid_id = resp1.json()["id"]
+    assert s0_bid_id != s1_bid_id
+
+    # Supplier 0 replays the shared key -> 200 OK with original bid
+    replay0 = client.post(
+        f"/api/v1/rfqs/{rfq_id}/bids",
+        json={
+            "freight_charges": 1500.00,
+            "origin_charges": 100.00,
+            "destination_charges": 100.00,
+            "transit_time_days": 15,
+            "quote_validity_date": (now + timedelta(days=20)).isoformat(),
+            "carrier_name": "Supplier 0 Carrier",
+        },
+        headers={"Authorization": f"Bearer {s0_token}", "Idempotency-Key": shared_key},
+    )
+    assert replay0.status_code == 200
+    assert replay0.json()["id"] == s0_bid_id
+
+    # Supplier 1 replays the shared key -> 200 OK with original bid
+    replay1 = client.post(
+        f"/api/v1/rfqs/{rfq_id}/bids",
+        json={
+            "freight_charges": 1400.00,
+            "origin_charges": 100.00,
+            "destination_charges": 100.00,
+            "transit_time_days": 14,
+            "quote_validity_date": (now + timedelta(days=20)).isoformat(),
+            "carrier_name": "Supplier 1 Carrier",
+        },
+        headers={"Authorization": f"Bearer {s1_token}", "Idempotency-Key": shared_key},
+    )
+    assert replay1.status_code == 200
+    assert replay1.json()["id"] == s1_bid_id
+
 
 

@@ -807,3 +807,226 @@ def test_status_transitions(db_session, buyer_user, suppliers):
     assert changed_f is True
     assert rfq_forced.status == RFQStatus.FORCE_CLOSED.value
     assert ev_f == AuctionEventType.FORCED_CLOSE.value
+
+
+# -------------------------------------------------------------
+# Test 9: Idempotency Scope Multi-Tenant Isolation
+# -------------------------------------------------------------
+def test_cross_supplier_idempotency_scope(db_session, buyer_user, suppliers, supplier_users):
+    """
+    Verifies partial unique index (rfq_id, supplier_id, idempotency_key).
+    Two different suppliers using the exact same idempotency key both succeed.
+    Each supplier replaying the key receives only their own cached bid.
+    """
+    bid_start = datetime(2026, 6, 1, 10, 0, 0, tzinfo=timezone.utc)
+    bid_close = datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    forced_close = datetime(2026, 6, 1, 13, 0, 0, tzinfo=timezone.utc)
+    pickup_date = datetime(2026, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
+
+    rfq = create_rfq_helper(
+        db_session,
+        buyer_user,
+        [suppliers[0], suppliers[1]],
+        bid_start=bid_start,
+        bid_close=bid_close,
+        forced_close=forced_close,
+        pickup_date=pickup_date,
+    )
+
+    shared_key = "IDEMPOTENCY-SHARED-CLIENT-KEY-ABC"
+
+    # Supplier 0 submits quote with shared key
+    res0_first = process_bid_submission(
+        db=db_session,
+        rfq_id=rfq.id,
+        supplier_id=suppliers[0].id,
+        user_id=supplier_users[0].id,
+        freight_charges=Decimal("2000.00"),
+        origin_charges=Decimal("100.00"),
+        destination_charges=Decimal("100.00"),
+        transit_time_days=10,
+        quote_validity_date=pickup_date,
+        carrier_name="Carrier 0",
+        idempotency_key=shared_key,
+        current_time=datetime(2026, 6, 1, 10, 15, 0, tzinfo=timezone.utc),
+    )
+    assert res0_first["is_replay"] is False
+    bid0_id = res0_first["bid"].id
+
+    # Supplier 1 submits quote with the exact same shared key -> MUST SUCCEED (not clash)
+    res1_first = process_bid_submission(
+        db=db_session,
+        rfq_id=rfq.id,
+        supplier_id=suppliers[1].id,
+        user_id=supplier_users[1].id,
+        freight_charges=Decimal("1900.00"),
+        origin_charges=Decimal("100.00"),
+        destination_charges=Decimal("100.00"),
+        transit_time_days=11,
+        quote_validity_date=pickup_date,
+        carrier_name="Carrier 1",
+        idempotency_key=shared_key,
+        current_time=datetime(2026, 6, 1, 10, 16, 0, tzinfo=timezone.utc),
+    )
+    assert res1_first["is_replay"] is False
+    bid1_id = res1_first["bid"].id
+    assert bid0_id != bid1_id
+
+    # Supplier 0 replays the shared key -> gets Supplier 0's bid
+    res0_replay = process_bid_submission(
+        db=db_session,
+        rfq_id=rfq.id,
+        supplier_id=suppliers[0].id,
+        user_id=supplier_users[0].id,
+        freight_charges=Decimal("2000.00"),
+        origin_charges=Decimal("100.00"),
+        destination_charges=Decimal("100.00"),
+        transit_time_days=10,
+        quote_validity_date=pickup_date,
+        carrier_name="Carrier 0",
+        idempotency_key=shared_key,
+        current_time=datetime(2026, 6, 1, 10, 17, 0, tzinfo=timezone.utc),
+    )
+    assert res0_replay["is_replay"] is True
+    assert res0_replay["bid"].id == bid0_id
+    assert res0_replay["bid"].supplier_id == suppliers[0].id
+
+    # Supplier 1 replays the shared key -> gets Supplier 1's bid
+    res1_replay = process_bid_submission(
+        db=db_session,
+        rfq_id=rfq.id,
+        supplier_id=suppliers[1].id,
+        user_id=supplier_users[1].id,
+        freight_charges=Decimal("1900.00"),
+        origin_charges=Decimal("100.00"),
+        destination_charges=Decimal("100.00"),
+        transit_time_days=11,
+        quote_validity_date=pickup_date,
+        carrier_name="Carrier 1",
+        idempotency_key=shared_key,
+        current_time=datetime(2026, 6, 1, 10, 18, 0, tzinfo=timezone.utc),
+    )
+    assert res1_replay["is_replay"] is True
+    assert res1_replay["bid"].id == bid1_id
+    assert res1_replay["bid"].supplier_id == suppliers[1].id
+
+
+# -------------------------------------------------------------
+# Test 10: Bid Total Component Check Constraint
+# -------------------------------------------------------------
+def test_bid_total_check_constraint(db_session, buyer_user, suppliers, supplier_users):
+    """
+    Verifies DB CHECK constraint (total = freight_charges + origin_charges + destination_charges).
+    Any record violating total component sum must be rejected by the database.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    bid_start = datetime(2026, 6, 1, 10, 0, 0, tzinfo=timezone.utc)
+    bid_close = datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    forced_close = datetime(2026, 6, 1, 13, 0, 0, tzinfo=timezone.utc)
+    pickup_date = datetime(2026, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
+
+    rfq = create_rfq_helper(
+        db_session,
+        buyer_user,
+        [suppliers[0]],
+        bid_start=bid_start,
+        bid_close=bid_close,
+        forced_close=forced_close,
+        pickup_date=pickup_date,
+    )
+
+    # Valid bid where total == freight + origin + destination
+    valid_bid = Bid(
+        rfq_id=rfq.id,
+        supplier_id=suppliers[0].id,
+        submitted_by=supplier_users[0].id,
+        freight_charges=Decimal("1000.00"),
+        origin_charges=Decimal("100.00"),
+        destination_charges=Decimal("50.00"),
+        total=Decimal("1150.00"),
+        transit_time_days=12,
+        quote_validity_date=pickup_date,
+        carrier_name="Accurate Carrier",
+    )
+    db_session.add(valid_bid)
+    db_session.commit()
+    assert valid_bid.id is not None
+
+    # Invalid bid where total != freight + origin + destination (e.g. total is 999.00 instead of 1150.00)
+    invalid_bid = Bid(
+        rfq_id=rfq.id,
+        supplier_id=suppliers[0].id,
+        submitted_by=supplier_users[0].id,
+        freight_charges=Decimal("1000.00"),
+        origin_charges=Decimal("100.00"),
+        destination_charges=Decimal("50.00"),
+        total=Decimal("999.00"),  # Mismatched total
+        transit_time_days=12,
+        quote_validity_date=pickup_date,
+        carrier_name="Erroneous Carrier",
+    )
+    db_session.add(invalid_bid)
+    with pytest.raises(IntegrityError) as exc_info:
+        db_session.commit()
+    db_session.rollback()
+    assert "chk_total_equals_components" in str(exc_info.value) or "CHECK" in str(exc_info.value)
+
+
+# -------------------------------------------------------------
+# Test 11: Link Integrity ON DELETE RESTRICT on Triggering Bid
+# -------------------------------------------------------------
+def test_link_integrity_on_delete_restrict(db_session, buyer_user, suppliers, supplier_users):
+    """
+    Verifies auction_extensions.triggering_bid_id and auction_events.bid_id
+    use ON DELETE RESTRICT to guarantee audit and extension foreign key integrity.
+    """
+    from sqlalchemy.exc import IntegrityError
+    from app.models.entities import AuctionExtension
+
+    bid_start = datetime(2026, 6, 1, 10, 0, 0, tzinfo=timezone.utc)
+    bid_close = datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    forced_close = datetime(2026, 6, 1, 13, 0, 0, tzinfo=timezone.utc)
+    pickup_date = datetime(2026, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
+
+    rfq = create_rfq_helper(
+        db_session,
+        buyer_user,
+        [suppliers[0]],
+        bid_start=bid_start,
+        bid_close=bid_close,
+        forced_close=forced_close,
+        pickup_date=pickup_date,
+        trigger_window_minutes=10,
+        extension_minutes=5,
+    )
+
+    # Submit bid in trigger window (11:55:00) triggering an extension
+    res = process_bid_submission(
+        db=db_session,
+        rfq_id=rfq.id,
+        supplier_id=suppliers[0].id,
+        user_id=supplier_users[0].id,
+        freight_charges=Decimal("2000.00"),
+        origin_charges=Decimal("100.00"),
+        destination_charges=Decimal("100.00"),
+        transit_time_days=10,
+        quote_validity_date=pickup_date,
+        carrier_name="Carrier Ext",
+        current_time=datetime(2026, 6, 1, 11, 55, 0, tzinfo=timezone.utc),
+    )
+    bid = res["bid"]
+    assert res["extension_applied"] is True
+
+    # Confirm extension references triggering_bid_id
+    ext = db_session.query(AuctionExtension).filter_by(rfq_id=rfq.id).first()
+    assert ext is not None
+    assert ext.triggering_bid_id == bid.id
+
+    # Attempting to delete the triggering bid directly must fail with IntegrityError (RESTRICT)
+    db_session.delete(bid)
+    with pytest.raises(IntegrityError) as exc_info:
+        db_session.commit()
+    db_session.rollback()
+    assert "foreign key" in str(exc_info.value).lower() or "violates foreign key constraint" in str(exc_info.value).lower()
+

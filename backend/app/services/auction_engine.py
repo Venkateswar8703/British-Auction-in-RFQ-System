@@ -251,15 +251,25 @@ def process_bid_submission(
     """
     now = current_time or utc_now()
 
-    # 1. Check idempotency replay
+    # 1. Check idempotency replay scoped strictly to (rfq_id, supplier_id, idempotency_key)
     if idempotency_key:
         existing_bid = (
             db.query(Bid)
-            .filter(Bid.idempotency_key == idempotency_key)
+            .filter(
+                Bid.rfq_id == rfq_id,
+                Bid.supplier_id == supplier_id,
+                Bid.idempotency_key == idempotency_key,
+            )
             .first()
         )
         if existing_bid:
-            logger.info("Idempotency key %s found; replaying existing bid %s", idempotency_key, existing_bid.id)
+            logger.info(
+                "Idempotency key %s found for RFQ %s and Supplier %s; replaying existing bid %s",
+                idempotency_key,
+                rfq_id,
+                supplier_id,
+                existing_bid.id,
+            )
             rankings = calculate_rankings(db, existing_bid.rfq_id)
             supplier_rank = next((r["rank"] for r in rankings if r["supplier_id"] == existing_bid.supplier_id), None)
             return {

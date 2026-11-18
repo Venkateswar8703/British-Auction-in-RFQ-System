@@ -170,7 +170,7 @@ class Bid(Base):
     transit_time_days = Column(Integer, nullable=False)
     quote_validity_date = Column(TZDateTime, nullable=False)
     carrier_name = Column(String(255), nullable=False)
-    idempotency_key = Column(String(128), unique=True, nullable=True, index=True)
+    idempotency_key = Column(String(128), nullable=True)
     created_at = Column(TZDateTime, default=utc_now, nullable=False)
 
     __table_args__ = (
@@ -178,17 +178,19 @@ class Bid(Base):
         CheckConstraint("origin_charges >= 0", name="chk_origin_non_neg"),
         CheckConstraint("destination_charges >= 0", name="chk_destination_non_neg"),
         CheckConstraint("total > 0", name="chk_total_pos"),
+        CheckConstraint("total = freight_charges + origin_charges + destination_charges", name="chk_total_equals_components"),
         CheckConstraint("transit_time_days > 0", name="chk_transit_pos"),
         Index("idx_bids_rfq_created", "rfq_id", "created_at"),
         Index("idx_bids_rfq_total", "rfq_id", "total"),
         Index("idx_bids_supplier_rfq", "supplier_id", "rfq_id", "created_at"),
+        Index("idx_bids_rfq_supplier_idem", "rfq_id", "supplier_id", "idempotency_key", unique=True, postgresql_where=(Column("idempotency_key").isnot(None))),
     )
 
     rfq = relationship("RFQ", back_populates="bids")
     supplier = relationship("Supplier", back_populates="bids")
     submitter = relationship("User", back_populates="bids")
-    extension_triggered = relationship("AuctionExtension", back_populates="triggering_bid", uselist=False)
-    events = relationship("AuctionEvent", back_populates="bid")
+    extension_triggered = relationship("AuctionExtension", back_populates="triggering_bid", uselist=False, passive_deletes=True)
+    events = relationship("AuctionEvent", back_populates="bid", passive_deletes=True)
 
 
 class AuctionExtension(Base):
@@ -196,7 +198,7 @@ class AuctionExtension(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     rfq_id = Column(String(36), ForeignKey("rfqs.id", ondelete="CASCADE"), nullable=False)
-    triggering_bid_id = Column(String(36), ForeignKey("bids.id", ondelete="SET NULL"), nullable=True)
+    triggering_bid_id = Column(String(36), ForeignKey("bids.id", ondelete="RESTRICT"), nullable=False)
     previous_close = Column(TZDateTime, nullable=False)
     new_close = Column(TZDateTime, nullable=False)
     trigger_type = Column(String(30), nullable=False)
@@ -217,7 +219,7 @@ class AuctionEvent(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     rfq_id = Column(String(36), ForeignKey("rfqs.id", ondelete="CASCADE"), nullable=False)
-    bid_id = Column(String(36), ForeignKey("bids.id", ondelete="SET NULL"), nullable=True)
+    bid_id = Column(String(36), ForeignKey("bids.id", ondelete="RESTRICT"), nullable=True)
     event_type = Column(String(50), nullable=False)
     payload = Column(JSON, nullable=False)
     created_at = Column(TZDateTime, default=utc_now, nullable=False)

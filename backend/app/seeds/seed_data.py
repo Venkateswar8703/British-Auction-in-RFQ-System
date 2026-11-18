@@ -552,17 +552,19 @@ def seed_database(reset: bool = True):
 
             # If forced close, add extension records demonstrating it was clamped
             if item["status"] == RFQStatus.FORCE_CLOSED.value:
-                ext = AuctionExtension(
-                    rfq_id=rfq_obj.id,
-                    triggering_bid_id=None,
-                    previous_close=item["close"],
-                    new_close=item["forced"],
-                    trigger_type=item["trigger"],
-                    reason=f"Auction extended to forced close deadline ({item['forced'].isoformat()}) due to competitive activity.",
-                    is_clamped=True,
-                    created_at=item["forced"] - timedelta(minutes=15),
-                )
-                db.add(ext)
+                last_bid = db.query(Bid).filter(Bid.rfq_id == rfq_obj.id).order_by(Bid.created_at.desc()).first()
+                if last_bid:
+                    ext = AuctionExtension(
+                        rfq_id=rfq_obj.id,
+                        triggering_bid_id=last_bid.id,
+                        previous_close=item["close"],
+                        new_close=item["forced"],
+                        trigger_type=item["trigger"],
+                        reason=f"Auction extended to forced close deadline ({item['forced'].isoformat()}) due to competitive activity.",
+                        is_clamped=True,
+                        created_at=item["forced"] - timedelta(minutes=15),
+                    )
+                    db.add(ext)
 
         db.commit()
         logger.info("Successfully seeded MERIDIAN database with %d RFQs and 8 suppliers.", len(rfq_catalog) + 1)
