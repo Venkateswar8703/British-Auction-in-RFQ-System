@@ -28,6 +28,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     async function loadUser() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const demoParam = urlParams.get('demo') as keyof typeof DEMO_CREDENTIALS | null;
+      if (demoParam && DEMO_CREDENTIALS[demoParam]) {
+        try {
+          const creds = DEMO_CREDENTIALS[demoParam];
+          const res = await api.login(creds.email, creds.password);
+          localStorage.setItem('meridian_token', res.access_token);
+          setToken(res.access_token);
+          setUser(res.user);
+          setIsLoading(false);
+          return;
+        } catch (e) {
+          console.error('Auto demo login failed:', e);
+        }
+      }
+
       const storedToken = localStorage.getItem('meridian_token');
       if (storedToken) {
         try {

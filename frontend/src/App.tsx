@@ -50,6 +50,15 @@ export const App: React.FC = () => {
             />
 
             <Route
+              path="/command-center"
+              element={
+                <ProtectedRoute buyerOnly>
+                  <CommandCenter />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
               path="/auctions"
               element={
                 <ProtectedRoute>
