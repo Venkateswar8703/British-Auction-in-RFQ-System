@@ -108,66 +108,77 @@ For full sequence diagrams and transaction flows, see [`docs/HLD.md`](docs/HLD.m
 > [!IMPORTANT]
 > **Deployment Architecture**: The British Auction engine requires continuous bidirectional WebSockets and transactional row locking (`SELECT ... FOR UPDATE` on PostgreSQL 16). The authoritative full stack runs via Docker Compose (`docker compose up --build`) or local services. Static frontend hosts (such as Vercel) without persistent backend WebSockets and database connectivity are not suitable for the live auction engine.
 
-### Option A: Makefile (Instant Local Development)
-A complete `Makefile` is provided at the repository root for one-command operations:
+### Option A: Makefile (Instant Local Development with PostgreSQL)
+A complete `Makefile` is provided at the repository root for one-command operations. `make dev` uses PostgreSQL 16 by default:
 
 ```bash
-make dev      # Starts both backend (port 8000) and frontend (port 5173)
+# 1. Start PostgreSQL 16 container (or run local Postgres service on port 5432)
+docker compose up -d db
+
+# 2. Set DATABASE_URL in .env (if not already set)
+cp .env.example .env
+# DATABASE_URL=postgresql://meridian:meridian_secret@127.0.0.1:5432/meridian_db
+
+# 3. Apply Alembic migrations and seed data
+PYTHONPATH=backend .venv/bin/alembic -c backend/alembic.ini upgrade head
+PYTHONPATH=backend .venv/bin/python3 scripts/reseed.py
+
+# 4. Start local development stack (Backend on port 8000, Frontend on port 5173)
+make dev
+
+# 5. Verify connected database via health check
+curl http://localhost:8000/health
+# Returns: {"status":"healthy","service":"MERIDIAN Auction Engine","database":"postgresql",...}
+```
+
+Additional make targets:
+```bash
 make test     # Runs full backend pytest (93% engine coverage) and frontend Vitest suites
 make seed     # Reseeds database relative to now() with Scheduled, Active, Closed & Force Closed RFQs
 make demo     # Resets the signature live demo auction into its trigger window
 make verify   # Executes the 10 authoritative live API verification scenarios
 make build    # Builds frontend production bundle and verifies TypeScript types
 make docker-up # Boots full PostgreSQL 16 + FastAPI + Nginx stack in containers
+make docker-down # Stops all Docker containers
 ```
 
 ---
 
-### Option B: Docker Compose (PostgreSQL 16 + Backend + Frontend)
+### Option B: Full Stack Docker Compose (PostgreSQL 16 + Backend + Frontend)
 
 Ensure Docker and Docker Compose are installed, then run:
 
 ```bash
-docker-compose up --build
+docker compose up --build -d
 ```
 
 - **Frontend**: [http://localhost:5173](http://localhost:5173) (or [http://localhost](http://localhost))
 - **Backend Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Database**: PostgreSQL on port 5432
+- **Health Check**: `curl http://localhost:8000/health` (`"database":"postgresql"`)
 
-*(Migrations and seed data are automatically applied on startup).*
+*(Migrations and seed data are automatically applied on container startup).*
 
 ---
 
-### Option C: Local Development (SQLite Fallback, No Docker Needed)
+### Option C: Local Development with SQLite Fallback (No PostgreSQL Needed)
 
-MERIDIAN supports a zero-configuration local development mode using SQLite.
-> [!NOTE]
+MERIDIAN supports a zero-configuration local fallback mode using SQLite when PostgreSQL is unavailable.
+> [!WARNING]
+> Running with SQLite triggers an explicit warning on startup:
+> ```
+> ⚠️  [DATABASE WARNING] Running on SQLite fallback (sqlite:///./meridian.db).
+> Row-level locking (SELECT ... FOR UPDATE) is NOT enforced by SQLite.
+> For production-grade ACID concurrency and row-level locking, use PostgreSQL 16 via DATABASE_URL.
+> ```
 > SQLite serializes writes at the file level and does not support true row-level locking (`SELECT ... FOR UPDATE`). PostgreSQL 16 is the authoritative, production-supported database engine required for concurrent bidding.
 
-#### 1. Backend Setup (Terminal 1)
+To run with SQLite fallback:
 ```bash
-# From repository root:
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r backend/requirements.txt
-
-# Run migrations and seed data (creates 14 RFQs and 8 carriers)
-python scripts/reseed.py
-
-# Launch FastAPI server
-cd backend
-uvicorn app.main:app --reload --port 8000
-```
-
-#### 2. Frontend Setup (Terminal 2)
-```bash
-# In another terminal:
-cd frontend
-npm install
-npm run dev
+export DATABASE_URL="sqlite:///./meridian.db"
+PYTHONPATH=backend .venv/bin/alembic -c backend/alembic.ini upgrade head
+PYTHONPATH=backend .venv/bin/python3 scripts/reseed.py
+make dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.

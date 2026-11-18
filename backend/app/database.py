@@ -7,13 +7,17 @@ logger = logging.getLogger("meridian.database")
 
 connect_args = {}
 if settings.DATABASE_URL.startswith("sqlite"):
-    logger.warning(
-        "⚠️ [DATABASE WARNING] Running on SQLite fallback (%s). "
-        "Row-level locking (SELECT ... FOR UPDATE) is NOT enforced by SQLite. "
-        "For production-grade ACID concurrency and row-level locking, use PostgreSQL 16 via DATABASE_URL.",
-        settings.DATABASE_URL
+    warning_msg = (
+        "⚠️  [DATABASE WARNING] Running on SQLite fallback (%s).\n"
+        "Row-level locking (SELECT ... FOR UPDATE) is NOT enforced by SQLite.\n"
+        "For production-grade ACID concurrency and row-level locking, use PostgreSQL 16 via DATABASE_URL."
+        % settings.DATABASE_URL
     )
+    print("\n" + "!" * 80 + "\n" + warning_msg + "\n" + "!" * 80 + "\n", flush=True)
+    logger.warning(warning_msg)
     connect_args = {"check_same_thread": False, "timeout": 30}
+else:
+    logger.info("Connected to PostgreSQL database: %s", settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else "configured")
 
 engine_kwargs = {"echo": settings.ECHO_SQL, "pool_pre_ping": True}
 if not settings.DATABASE_URL.startswith("sqlite"):

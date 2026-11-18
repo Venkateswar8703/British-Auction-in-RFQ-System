@@ -16,7 +16,7 @@ help:
 
 dev:
 	@echo "Starting MERIDIAN backend (port 8000) and frontend (port 5173)..."
-	@(PYTHONPATH=backend .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload & cd frontend && npm run dev)
+	@(PYTHONPATH=backend DATABASE_URL="$${DATABASE_URL:-postgresql://meridian:meridian_secret@127.0.0.1:5432/meridian_db}" .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload & cd frontend && npm run dev)
 
 test: test-backend test-frontend
 
