@@ -71,24 +71,31 @@ graph TD
     end
 
     subgraph Storage["Persistence & Transactions"]
-        DB[("PostgreSQL 16 / SQLite Fallback<br/>(Row-Level Lock: SELECT FOR UPDATE)")]
+        DB[("PostgreSQL 16 / SQLite Fallback<br/>Row-Level Lock: SELECT FOR UPDATE")]
     end
 
-    BuyerClient -->|REST & WS| Nginx
-    CarrierA -->|REST & WS| Nginx
-    CarrierB -->|REST & WS| Nginx
-    Nginx -->|/api/*| RFQRouter
-    Nginx -->|/api/auth/*| AuthRouter
-    Nginx -->|/ws/*| WSManager
+    BuyerClient -->|"REST & WS"| Nginx
+    CarrierA -->|"REST & WS"| Nginx
+    CarrierB -->|"REST & WS"| Nginx
+    Nginx -->|"/api/*"| RFQRouter
+    Nginx -->|"/api/auth/*"| AuthRouter
+    Nginx -->|"/ws/*"| WSManager
 
-    RFQRouter -->|Transaction| Engine
-    Engine -->|Lock Auction Row| DB
-    BackgroundSweeper -->|Status Check & Sweep| DB
-    Engine -->|Broadcast Mutation| WSManager
-    WSManager -->|Live Sync (Bids, Extensions, Ladder)| BuyerClient
-    WSManager -->|Live Sync (Bids, Extensions, Ladder)| CarrierA
-    WSManager -->|Live Sync (Bids, Extensions, Ladder)| CarrierB
+    RFQRouter -->|"Transaction"| Engine
+    Engine -->|"Lock Auction Row"| DB
+    BackgroundSweeper -->|"Status Check & Sweep"| DB
+    Engine -->|"Broadcast Mutation"| WSManager
+    WSManager -->|"Live Sync: Bids, Extensions, Ladder"| BuyerClient
+    WSManager -->|"Live Sync: Bids, Extensions, Ladder"| CarrierA
+    WSManager -->|"Live Sync: Bids, Extensions, Ladder"| CarrierB
 ```
+
+<details>
+<summary><b>View Static Architecture Diagram (PNG Fallback)</b></summary>
+
+![MERIDIAN Architecture](docs/architecture.png)
+
+</details>
 
 For full sequence diagrams and transaction flows, see [`docs/HLD.md`](docs/HLD.md).
 
