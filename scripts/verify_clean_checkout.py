@@ -54,7 +54,13 @@ def main():
 
     # 5. Authoritative bid submission
     print("\n5. Testing authoritative bid placement...")
-    target_rfq = active_rfqs[0]
+    target_rfq = None
+    for r in active_rfqs:
+        inv_check = client.get(f"/api/v1/rfqs/{r['id']}", headers={"Authorization": f"Bearer {maersk_token}"})
+        if inv_check.status_code == 200:
+            target_rfq = r
+            break
+    assert target_rfq is not None, "No active RFQ found where Maersk is invited"
     rfq_id = target_rfq["id"]
 
     bids_res = client.get(f"/api/v1/rfqs/{rfq_id}/bids", headers={"Authorization": f"Bearer {maersk_token}"})

@@ -114,6 +114,16 @@ def submit_bid(
                 "is_clamped": result["extension"].is_clamped,
             }
 
+        visibility = getattr(rfq.config, "bid_visibility", "OPEN") if rfq.config else "OPEN"
+        for ev in result.get("events", []):
+            ev_payload = dict(ev.payload)
+            ev_payload["bid_visibility"] = visibility
+            ws_manager.broadcast_to_rfq_sync(
+                rfq_id=rfq_id,
+                event_type=ev.event_type,
+                data=ev_payload,
+            )
+
         ws_manager.broadcast_to_rfq_sync(
             rfq_id=rfq_id,
             event_type="NEW_BID",

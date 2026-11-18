@@ -220,6 +220,10 @@ MERIDIAN delivers an enterprise editorial procurement product with dedicated int
    - Dedicated dashboard for carrier commercial representatives.
    - Live participation metrics: invited auctions count, active bids placed, leading contracts (L1), and RFQ deadlines.
    - Direct bid submission actions and status tracking for invited routes.
+6. **Auction Details & History / Audit Console** (`/auctions/:rfqId/details`):
+   - Comprehensive chronological audit log and post-auction inspection console.
+   - Interactive replay scrubber and historical event timeline (`BID_SUBMITTED`, `RANK_CHANGED`, `L1_CHANGED`, `EXTENSION_APPLIED`, `EXTENSION_CAPPED`, `AUCTION_CLOSED`).
+   - Detailed quote breakdowns, participant bidding logs, tamper-proof event integrity badges, and authoritative CSV export.
 
 ---
 
@@ -386,7 +390,7 @@ cd frontend && npm test
 | **ORM & Database** | SQLAlchemy 2.x + Alembic | Declarative data modeling, ACID transactions, migrations |
 | **Databases** | PostgreSQL 16 (Prod & Concurrency) / SQLite (Dev) | PostgreSQL enforces true row-level locks (`SELECT ... FOR UPDATE`); SQLite serializes at file level |
 | **Security & Auth** | JWT (`python-jose`) + `bcrypt` | Role-based access control (`buyer`, `supplier`) |
-| **Real-Time** | Starlette WebSockets | Real-time state synchronization across buyers and carriers (measured ~37ms broadcast latency) |
+| **Real-Time** | Starlette WebSockets | Real-time state synchronization across buyers and carriers (measured localhost: avg 54.17ms, min 29.43ms, max 85.72ms, sample size 5) |
 | **Frontend Framework** | React 18 + TypeScript + Vite | Rapid client-rendered UI with strong typing |
 | **Styling & Design** | Tailwind CSS | MERIDIAN industrial palette (`#171A19`, `#C5F36B`, `#E4774D`) |
 | **Typography** | Space Grotesk, Inter, IBM Plex Mono | Financial terminal density with tabular figures |

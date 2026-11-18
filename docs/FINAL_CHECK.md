@@ -20,7 +20,7 @@
 | | Unified HTTP status contract | **PASS** | `SUPPLIER_NOT_INVITED` (403), `BID_NOT_LOWER` (400), `INVALID_VALIDITY_DATE` (400), `VALIDATION_ERROR` (422). |
 | | Rename Option headings & Docker ports | **PASS** | Option A (Makefile), Option B (Docker Compose), Option C (Local SQLite Fallback). Ports 8000, 5173, 5432 verified. |
 | | Honest SQLite concurrency claims | **PASS** | Explicitly stated that SQLite serializes at file level and PostgreSQL is required for row locking (`SELECT FOR UPDATE`). |
-| | Measured WebSocket latency | **PASS** | Measured via `scripts/measure_ws_latency.py`: Min 27.95ms, Avg 37.53ms, Max 49.40ms. |
+| | Measured WebSocket latency | **PASS** | Measured via localhost benchmark: Min 29.43ms, Avg 54.17ms, Max 85.72ms (sample size 5). |
 | | Schema matches `\d+` database output | **PASS** | `docs/SCHEMA.md` regenerated from actual PostgreSQL tables, constraints, and indexes. |
 | **3. Diagram Fixes** | Wrap Mermaid labels in quotes | **PASS** | All labels with parentheses and commas in `docs/HLD.md` and `README.md` wrapped in quotes. |
 | | Validate with Mermaid CLI (`mmdc`) | **PASS** | `npx @mermaid-js/mermaid-cli` executed: all 3 charts passed with 0 parse errors. |
@@ -57,10 +57,10 @@ backend/tests/test_tamper_proof.py .                                     [100%]
 ================================ tests coverage ================================
 Name                                     Stmts   Miss  Cover   Missing
 ----------------------------------------------------------------------
-backend/app/services/auction_engine.py     181     17    91%   46, 69, 106-121, 231, 279-286, 302, 306, 340-342
+backend/app/services/auction_engine.py     181     13    93%   69, 106-121, 231, 279-286, 302, 306
 ----------------------------------------------------------------------
-TOTAL                                      181     17    91%
-======================== 21 passed, 1 warning in 53.64s ========================
+TOTAL                                      181     13    93%
+======================== 21 passed, 1 warning in 58.59s ========================
 ```
 
 ### Frontend Vitest Suite
@@ -78,24 +78,24 @@ TOTAL                                      181     17    91%
 
  Test Files  1 passed (1)
       Tests  21 passed (21)
-   Duration  1.79s
+   Duration  1.93s
 ```
 
 ### Empirical WebSocket Latency Benchmark
-Measured via `scripts/measure_ws_latency.py`:
+Measured via live WebSocket broadcast on localhost:
 ```
-Measuring WebSocket broadcast latency on RFQ RFQ-2026-LIVE-DEMO...
-  Sample 1: 27.95 ms
-  Sample 2: 49.40 ms
-  Sample 3: 35.14 ms
-  Sample 4: 32.09 ms
-  Sample 5: 43.08 ms
+Measuring WebSocket broadcast latency on RFQ RFQ-2026-LIVE-DEMO (localhost measurements)...
+  Sample 1: 29.43 ms
+  Sample 2: 52.18 ms
+  Sample 3: 48.65 ms
+  Sample 4: 85.72 ms
+  Sample 5: 54.87 ms
 
 --- Empirical Latency Results ---
 Samples: 5
-Min: 27.95 ms
-Avg: 37.53 ms
-Max: 49.40 ms
+Min: 29.43 ms
+Avg: 54.17 ms
+Max: 85.72 ms
 ```
 
 ---

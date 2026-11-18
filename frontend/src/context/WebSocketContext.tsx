@@ -33,8 +33,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const token = localStorage.getItem('meridian_token');
-      const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
-      const wsUrl = `${protocol}//${window.location.host}/ws/rfqs/${rfqId}${tokenParam}`;
+      const wsUrl = `${protocol}//${window.location.host}/ws/rfqs/${rfqId}`;
       const socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {

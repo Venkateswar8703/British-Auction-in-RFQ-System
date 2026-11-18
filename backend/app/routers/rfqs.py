@@ -268,12 +268,11 @@ def get_rfq(
         is_my_rank = (current_user.supplier_id == r["supplier_id"])
         if is_masked and not is_my_rank:
             # Masked mode for rival suppliers:
-            # If rank == 1, they see L1 price, but carrier name is masked
-            # If rank > 1, amounts and names are masked
+            # Redact rival carrier name, charge breakdown, and total
             rankings_out.append(
                 SupplierRankOut(
                     rank=r["rank"],
-                    supplier_id=r["supplier_id"],
+                    supplier_id=f"competitor-{r['rank']}",
                     supplier_name="L1 Leader (Masked)" if r["rank"] == 1 else f"Rank {r['rank']} (Masked)",
                     supplier_code="L1" if r["rank"] == 1 else f"L{r['rank']}",
                     total=r["total"] if r["rank"] == 1 else None,
@@ -283,7 +282,7 @@ def get_rfq(
                     transit_time_days=None,
                     quote_validity_date=None,
                     carrier_name="Masked Carrier",
-                    bid_id=r["bid_id"],
+                    bid_id=f"masked-bid-{r['rank']}",
                     bid_created_at=r["bid_created_at"],
                     is_current_user_supplier=False,
                 )
@@ -363,6 +362,28 @@ def update_rfq(
             detail={"code": "RFQ_LOCKED", "message": "Auction cannot be modified once bidding has started or concluded"},
         )
 
+    # Compute candidate timing values and validate before mutating session object
+    cand_bid_start = rfq_update.bid_start if rfq_update.bid_start is not None else rfq.bid_start
+    cand_bid_close = rfq_update.bid_close if rfq_update.bid_close is not None else rfq.bid_close
+    cand_forced_close = rfq_update.forced_close if rfq_update.forced_close is not None else rfq.forced_close
+    cand_pickup_date = rfq_update.pickup_date if rfq_update.pickup_date is not None else rfq.pickup_date
+
+    if cand_bid_close <= cand_bid_start:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_TIMING", "message": "bid_close must be strictly after bid_start"},
+        )
+    if cand_forced_close <= cand_bid_close:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_TIMING", "message": "forced_close must be strictly after bid_close"},
+        )
+    if cand_pickup_date <= cand_bid_close:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_TIMING", "message": "pickup_date must be strictly after bid_close"},
+        )
+
     # Apply updates
     if rfq_update.title is not None:
         rfq.title = rfq_update.title.strip()
@@ -373,31 +394,14 @@ def update_rfq(
     if rfq_update.destination is not None:
         rfq.destination = rfq_update.destination.strip()
     if rfq_update.pickup_date is not None:
-        rfq.pickup_date = rfq_update.pickup_date
+        rfq.pickup_date = cand_pickup_date
     if rfq_update.bid_start is not None:
-        rfq.bid_start = rfq_update.bid_start
+        rfq.bid_start = cand_bid_start
     if rfq_update.bid_close is not None:
-        rfq.bid_close = rfq_update.bid_close
-        rfq.effective_close = rfq_update.bid_close
+        rfq.bid_close = cand_bid_close
+        rfq.effective_close = cand_bid_close
     if rfq_update.forced_close is not None:
-        rfq.forced_close = rfq_update.forced_close
-
-    # Validate timing constraints
-    if rfq.bid_close <= rfq.bid_start:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_TIMING", "message": "bid_close must be strictly after bid_start"},
-        )
-    if rfq.forced_close <= rfq.bid_close:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_TIMING", "message": "forced_close must be strictly after bid_close"},
-        )
-    if rfq.pickup_date <= rfq.bid_close:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_TIMING", "message": "pickup_date must be strictly after bid_close"},
-        )
+        rfq.forced_close = cand_forced_close
 
     # Update config
     if rfq.config:
@@ -508,13 +512,73 @@ def get_rfq_events(
             detail={"code": "RFQ_NOT_FOUND", "message": "RFQ not found"},
         )
 
+    if current_user.role == UserRole.SUPPLIER.value:
+        inv = (
+            db.query(RFQInvitation)
+            .filter(RFQInvitation.rfq_id == rfq.id, RFQInvitation.supplier_id == current_user.supplier_id)
+            .first()
+        )
+        if not inv:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "SUPPLIER_NOT_INVITED", "message": "Access denied: carrier not invited"},
+            )
+
+    is_masked = False
+    if rfq.config and getattr(rfq.config, "bid_visibility", "OPEN") == BidVisibility.MASKED.value:
+        if current_user.role == UserRole.SUPPLIER.value:
+            is_masked = True
+
     events = (
         db.query(AuctionEvent)
-        .filter(AuctionEvent.rfq_id == rfq_id)
+        .filter(AuctionEvent.rfq_id == rfq.id)
         .order_by(AuctionEvent.created_at.asc())
         .all()
     )
-    return [AuctionEventOut.model_validate(ev) for ev in events]
+
+    events_out = []
+    for ev in events:
+        ev_dict = {
+            "id": ev.id,
+            "rfq_id": ev.rfq_id,
+            "bid_id": ev.bid_id,
+            "event_type": ev.event_type,
+            "payload": dict(ev.payload) if ev.payload else {},
+            "created_at": ev.created_at,
+        }
+        if is_masked and ev_dict.get("payload"):
+            payload = ev_dict["payload"]
+            ev_type = ev.event_type
+            if ev_type == "BID_SUBMITTED":
+                if payload.get("supplier_id") != current_user.supplier_id:
+                    payload["supplier_id"] = "competitor"
+                    payload["supplier_name"] = "Competitor"
+                    payload["carrier_name"] = "Masked Carrier"
+                    payload["freight_charges"] = None
+                    payload["origin_charges"] = None
+                    payload["destination_charges"] = None
+                    payload["total"] = None
+            elif ev_type == "L1_CHANGED":
+                if payload.get("new_l1_supplier_id") != current_user.supplier_id:
+                    payload["new_l1_supplier_id"] = "competitor"
+                if payload.get("previous_l1_supplier_id") != current_user.supplier_id:
+                    payload["previous_l1_supplier_id"] = "competitor"
+                payload["notification_text"] = "New leading bid established"
+            elif ev_type == "RANK_CHANGED":
+                prev_r = payload.get("previous_ranks", {})
+                new_r = payload.get("new_ranks", {})
+                my_prev = prev_r.get(current_user.supplier_id)
+                my_new = new_r.get(current_user.supplier_id)
+                payload["previous_ranks"] = {"your_rank": my_prev} if my_prev else {}
+                payload["new_ranks"] = {"your_rank": my_new} if my_new else {}
+            elif ev_type in ["EXTENSION_APPLIED", "EXTENSION_CAPPED"]:
+                ext_min = payload.get("extension_minutes", 5)
+                payload["triggering_bid_id"] = None
+                payload["reason"] = f"Auction extended by {ext_min}m due to competitive bid inside trigger window"
+            ev_dict["payload"] = payload
+        events_out.append(AuctionEventOut(**ev_dict))
+
+    return events_out
 
 
 @router.post("/reseed-live-demo")
@@ -674,9 +738,18 @@ def export_rfq_csv(
     if current_user.role == UserRole.SUPPLIER.value:
         inv = db.query(RFQInvitation).filter(RFQInvitation.rfq_id == rfq.id, RFQInvitation.supplier_id == current_user.supplier_id).first()
         if not inv:
-            raise HTTPException(status_code=403, detail={"code": "ACCESS_DENIED", "message": "Not invited"})
+            raise HTTPException(status_code=403, detail={"code": "SUPPLIER_NOT_INVITED", "message": "Not invited to this RFQ"})
 
-    bids = db.query(Bid).filter(Bid.rfq_id == rfq.id).order_by(Bid.created_at.asc()).all()
+    is_masked = False
+    if rfq.config and getattr(rfq.config, "bid_visibility", "OPEN") == BidVisibility.MASKED.value:
+        if current_user.role == UserRole.SUPPLIER.value:
+            is_masked = True
+
+    bids_query = db.query(Bid).filter(Bid.rfq_id == rfq.id)
+    if is_masked:
+        bids_query = bids_query.filter(Bid.supplier_id == current_user.supplier_id)
+
+    bids = bids_query.order_by(Bid.created_at.asc()).all()
 
     output = io.StringIO()
     writer = csv.writer(output)

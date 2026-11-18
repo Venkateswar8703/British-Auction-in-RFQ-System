@@ -41,3 +41,4 @@ def downgrade() -> None:
         op.create_check_constraint('chk_origin_pos', 'bids', 'origin_charges > 0')
 
     op.drop_column('auction_configs', 'bid_visibility')
+

@@ -16,15 +16,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["WebSockets"])
 
+# Cache of redeemed single-use tickets
+_used_ws_tickets: set[str] = set()
+
 
 @router.websocket("/ws/rfqs/{rfq_id}")
 async def websocket_auction_endpoint(
     websocket: WebSocket, 
     rfq_id: str,
-    token: Optional[str] = Query(None),
     ticket: Optional[str] = Query(None),
 ):
-    auth_token = token or ticket
+    auth_token = ticket
     if not auth_token:
         # First-message authentication flow
         await websocket.accept()
@@ -32,13 +34,13 @@ async def websocket_auction_endpoint(
             raw_init = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
             init_json = json.loads(raw_init)
             if init_json.get("action") == "AUTH":
-                auth_token = init_json.get("token") or init_json.get("ticket")
+                auth_token = init_json.get("ticket") or init_json.get("token")
         except Exception:
             await websocket.close(code=4001, reason="Authentication timeout or invalid message")
             return
 
     if not auth_token:
-        await websocket.close(code=4001, reason="Authentication token required")
+        await websocket.close(code=4001, reason="Authentication token or ticket required")
         return
 
     try:
@@ -47,6 +49,14 @@ async def websocket_auction_endpoint(
             settings.JWT_SECRET,
             algorithms=[settings.JWT_ALGORITHM],
         )
+        # Single-use ticket check
+        if payload.get("ticket") or ticket is not None:
+            jti = payload.get("jti") or auth_token
+            if jti in _used_ws_tickets:
+                await websocket.close(code=4001, reason="Ticket already used (single-use only)")
+                return
+            _used_ws_tickets.add(jti)
+
         role = payload.get("role")
         supplier_id = payload.get("supplier_id")
         user_id = payload.get("sub")
@@ -90,6 +100,8 @@ async def websocket_auction_endpoint(
         return
 
     client_info = {"role": role, "supplier_id": supplier_id, "user_id": user_id}
+    if ticket:
+        await websocket.accept()
     await ws_manager.connect(rfq_id, websocket, client_info=client_info)
     try:
         while True:

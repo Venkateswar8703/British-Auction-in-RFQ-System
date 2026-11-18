@@ -82,40 +82,85 @@ async def structured_logging_middleware(request: Request, call_next):
     return response
 
 
-# In-memory sliding window rate limiter
+# In-memory per-process sliding window rate limiter
 _rate_limits: dict[str, list[float]] = {}
+_bid_rate_limits: dict[str, list[float]] = {}
 RATE_LIMIT_WINDOW_SECONDS = 60
-DEFAULT_MAX_REQUESTS_PER_WINDOW = 300
+DEFAULT_GENERAL_MAX_PER_WINDOW = 600  # Generous: normal browsing never 429s
+DEFAULT_BID_MAX_PER_WINDOW = 30       # Stricter: protects auction engine from rapid bid spam
 
 
 @app.middleware("http")
 async def rate_limiting_middleware(request: Request, call_next):
-    # Skip rate limiting for health check paths
+    """
+    In-memory per-process sliding-window rate limiter.
+    Throttles by authenticated user ID or client IP.
+    Enforces a strict limit on bid submissions (30/min) while ensuring
+    normal browsing (listing, live room telemetry, reconnects) is never throttled (600/min).
+    """
+    # Skip rate limiting for health check paths and WebSockets
     if request.url.path in ["/health", "/api/v1/health", "/api/health"] or request.url.path.startswith("/ws/"):
         return await call_next(request)
 
-    client_ip = request.headers.get("X-Test-Client-Id") or (request.client.host if request.client else "127.0.0.1")
+    # Resolve client identity: User ID from Bearer token if present, else IP
+    client_identity = request.headers.get("X-Test-Client-Id")
+    if not client_identity:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            try:
+                from jose import jwt
+                token = auth_header.split(" ")[1]
+                payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+                client_identity = f"user:{payload.get('sub')}"
+            except Exception:
+                pass
+    if not client_identity:
+        client_identity = f"ip:{request.client.host if request.client else '127.0.0.1'}"
+
     now_ts = asyncio.get_event_loop().time()
-
-    custom_limit = request.headers.get("X-Test-Rate-Limit")
-    max_requests = int(custom_limit) if custom_limit and custom_limit.isdigit() else DEFAULT_MAX_REQUESTS_PER_WINDOW
-
-    timestamps = _rate_limits.setdefault(client_ip, [])
     cutoff = now_ts - RATE_LIMIT_WINDOW_SECONDS
-    _rate_limits[client_ip] = [ts for ts in timestamps if ts > cutoff]
 
-    if len(_rate_limits[client_ip]) >= max_requests:
+    # Check if this is a bid submission
+    is_bid_post = request.method == "POST" and "/bids" in request.url.path
+
+    if is_bid_post:
+        custom_bid_limit = request.headers.get("X-Test-Bid-Rate-Limit") or request.headers.get("X-Test-Rate-Limit")
+        max_bids = int(custom_bid_limit) if custom_bid_limit and custom_bid_limit.isdigit() else DEFAULT_BID_MAX_PER_WINDOW
+
+        bid_timestamps = _bid_rate_limits.setdefault(client_identity, [])
+        _bid_rate_limits[client_identity] = [ts for ts in bid_timestamps if ts > cutoff]
+
+        if len(_bid_rate_limits[client_identity]) >= max_bids:
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": f"Bid rate limit exceeded ({max_bids} bids/min). Please slow down.",
+                    "details": {"retry_after_seconds": 60, "endpoint": "bid_submission"},
+                },
+                headers={"Retry-After": "60"},
+            )
+        _bid_rate_limits[client_identity].append(now_ts)
+
+    # General request rate limiter
+    custom_general_limit = request.headers.get("X-Test-Rate-Limit")
+    max_general = int(custom_general_limit) if custom_general_limit and custom_general_limit.isdigit() else DEFAULT_GENERAL_MAX_PER_WINDOW
+
+    general_timestamps = _rate_limits.setdefault(client_identity, [])
+    _rate_limits[client_identity] = [ts for ts in general_timestamps if ts > cutoff]
+
+    if len(_rate_limits[client_identity]) >= max_general:
         return JSONResponse(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             content={
                 "code": "RATE_LIMIT_EXCEEDED",
-                "message": f"Too many requests. Limit is {max_requests} requests per minute.",
+                "message": f"Too many requests. Limit is {max_general} requests per minute.",
                 "details": {"retry_after_seconds": 60},
             },
             headers={"Retry-After": "60"},
         )
 
-    _rate_limits[client_ip].append(now_ts)
+    _rate_limits[client_identity].append(now_ts)
     return await call_next(request)
 
 @app.get("/health", tags=["Health"])
@@ -194,9 +239,9 @@ def health_check():
 # Include Routers
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(suppliers.router, prefix="/api/v1")
-app.include_router(suppliers.router, prefix="")  # Alias for /suppliers
 app.include_router(rfqs.router, prefix="/api/v1")
 app.include_router(bids.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
+app.include_router(ws.router, prefix="/api/v1")
 app.include_router(ws.router)
 

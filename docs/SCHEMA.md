@@ -85,8 +85,8 @@ erDiagram
         uuid supplier_id FK
         uuid submitted_by FK
         decimal freight_charges "CHECK > 0"
-        decimal origin_charges "CHECK > 0"
-        decimal destination_charges "CHECK > 0"
+        decimal origin_charges "CHECK >= 0"
+        decimal destination_charges "CHECK >= 0"
         decimal total "CHECK > 0"
         integer transit_time_days "CHECK > 0"
         datetime quote_validity_date

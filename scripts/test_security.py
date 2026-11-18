@@ -47,13 +47,15 @@ def http_req(method, path, data=None, headers=None):
             parsed = {"raw": content}
         return e.code, parsed, dict(e.headers)
 
-async def test_websocket_connect(rfq_id, token=None):
+async def check_websocket_connect(rfq_id, token=None, ticket=None):
     import websockets
     ws_url = f"{WS_BASE}/{rfq_id}"
-    if token:
-        ws_url += f"?token={urllib.parse.quote(token)}"
+    if ticket:
+        ws_url += f"?ticket={urllib.parse.quote(ticket)}"
     try:
         async with websockets.connect(ws_url, close_timeout=3) as ws:
+            if token and not ticket:
+                await ws.send(json.dumps({"action": "AUTH", "token": token}))
             # Send ping
             await ws.send(json.dumps({"action": "PING"}))
             msg = await asyncio.wait_for(ws.recv(), timeout=3)
@@ -129,7 +131,7 @@ def run_security_audit():
         print("✓ PASS: Uninvited supplier refused on REST (403 SUPPLIER_NOT_INVITED)!")
 
         # 2B: WebSocket check
-        ws_status, ws_detail = asyncio.run(test_websocket_connect(rfq.reference_id, uninvited_token))
+        ws_status, ws_detail = asyncio.run(check_websocket_connect(rfq.reference_id, token=uninvited_token))
         print(f"WebSocket Connect (uninvited) -> Status: {ws_status} | Detail: {ws_detail}")
         assert "403" in ws_status or "4003" in ws_status or "403" in ws_detail or "4003" in ws_detail
         print("✓ PASS: Uninvited supplier refused on WebSocket (HTTP 403 / close code 4003)!")
@@ -199,13 +201,13 @@ def run_security_audit():
     # 7. WebSocket requires authentication
     print("\n--- 7. WebSocket Authentication Enforcement ---")
     # Anonymous connection attempt
-    ws_status, ws_detail = asyncio.run(test_websocket_connect(rfq.reference_id, token=None))
+    ws_status, ws_detail = asyncio.run(check_websocket_connect(rfq.reference_id, token=None))
     print(f"WebSocket Connect (anonymous / no token) -> Status: {ws_status} | Detail: {ws_detail}")
     assert "401" in ws_status or "4001" in ws_status or "403" in ws_status or "401" in ws_detail or "4001" in ws_detail or "403" in ws_detail
     print("✓ PASS: Anonymous WebSocket connection strictly rejected (HTTP 403 / close code 4001)!")
 
     # Valid authenticated connection
-    ws_status_auth, ws_reply = asyncio.run(test_websocket_connect(rfq.reference_id, token=supplier_token))
+    ws_status_auth, ws_reply = asyncio.run(check_websocket_connect(rfq.reference_id, token=supplier_token))
     print(f"WebSocket Connect (authenticated) -> Status: {ws_status_auth} | Reply: {ws_reply.get('event_type')}")
     assert ws_status_auth == "CONNECTED" and ws_reply.get("event_type") in ("CLOCK_SYNC", "PONG")
     print("✓ PASS: Authenticated WebSocket connection authorized successfully!")

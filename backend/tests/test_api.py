@@ -1,3 +1,4 @@
+import json
 import pytest
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
@@ -143,7 +144,7 @@ def test_rfq_creation_and_role_access(client, buyer_user, suppliers, supplier_us
     assert err["code"] == "BID_NOT_LOWER"
 
 
-def test_endpoints_rfq_patch_invitations_and_suppliers(client, buyer_user, suppliers):
+def test_endpoints_rfq_patch_invitations_and_suppliers(client, buyer_user, suppliers, supplier_users, db_session):
     # Login buyer
     buyer_login = client.post(
         "/api/v1/auth/login",
@@ -152,13 +153,21 @@ def test_endpoints_rfq_patch_invitations_and_suppliers(client, buyer_user, suppl
     buyer_token = buyer_login.json()["access_token"]
     headers = {"Authorization": f"Bearer {buyer_token}"}
 
-    # 1. Test GET /suppliers and GET /api/v1/suppliers
-    supp_resp = client.get("/suppliers", headers=headers)
-    assert supp_resp.status_code == 200
-    assert len(supp_resp.json()) >= len(suppliers)
-
+    # 1. Test GET /api/v1/suppliers is buyer-only, and unprefixed /suppliers is 404
     supp_api_resp = client.get("/api/v1/suppliers", headers=headers)
     assert supp_api_resp.status_code == 200
+    assert len(supp_api_resp.json()) >= len(suppliers)
+
+    supp_unprefixed = client.get("/suppliers", headers=headers)
+    assert supp_unprefixed.status_code == 404
+
+    s0_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": suppliers[0].contact_email, "password": "SupplierPass2026!"},
+    )
+    s0_token = s0_login.json()["access_token"]
+    supp_forbidden = client.get("/api/v1/suppliers", headers={"Authorization": f"Bearer {s0_token}"})
+    assert supp_forbidden.status_code == 403
 
     # 2. Create SCHEDULED RFQ (future start time)
     now = datetime.now(timezone.utc)
@@ -192,6 +201,23 @@ def test_endpoints_rfq_patch_invitations_and_suppliers(client, buyer_user, suppl
     assert patch_resp.json()["title"] == "Updated Scheduled RFQ Title"
     assert patch_resp.json()["config"]["extension_minutes"] == 8
 
+    # Test invalid timing revalidation
+    bad_forced = client.patch(
+        f"/api/v1/rfqs/{rfq_id}",
+        json={"forced_close": (now + timedelta(hours=3)).isoformat()},
+        headers=headers,
+    )
+    assert bad_forced.status_code == 400
+    assert bad_forced.json()["code"] == "INVALID_TIMING"
+
+    bad_bid_close = client.patch(
+        f"/api/v1/rfqs/{rfq_id}",
+        json={"bid_close": (now + timedelta(hours=1)).isoformat()},
+        headers=headers,
+    )
+    assert bad_bid_close.status_code == 400
+    assert bad_bid_close.json()["code"] == "INVALID_TIMING"
+
     # 4. Add invitation POST /api/v1/rfqs/{id}/invitations while SCHEDULED
     inv_post_resp = client.post(
         f"/api/v1/rfqs/{rfq_id}/invitations",
@@ -208,6 +234,15 @@ def test_endpoints_rfq_patch_invitations_and_suppliers(client, buyer_user, suppl
     )
     assert del_inv_resp.status_code == 200
     assert not any(inv["supplier_id"] == suppliers[1].id for inv in del_inv_resp.json()["invitations"])
+
+    # 6. Reject edits in ACTIVE, CLOSED, and FORCE_CLOSED
+    rfq_obj = db_session.query(RFQ).filter(RFQ.id == rfq_id).first()
+    for locked_status in ["ACTIVE", "CLOSED", "FORCE_CLOSED"]:
+        rfq_obj.status = locked_status
+        db_session.commit()
+        locked_patch = client.patch(f"/api/v1/rfqs/{rfq_id}", json={"title": "Hacked"}, headers=headers)
+        assert locked_patch.status_code == 400
+        assert locked_patch.json()["code"] == "RFQ_LOCKED"
 
 
 def test_bid_visibility_masked_payloads(client, buyer_user, suppliers, supplier_users):
@@ -326,7 +361,85 @@ def test_bid_visibility_masked_payloads(client, buyer_user, suppliers, supplier_
     assert len(supplier_bids) == 1
     assert supplier_bids[0]["supplier_id"] == suppliers[1].id
 
-    # 3. Buyer fetches RFQ: sees completely UNMASKED data
+    # 3. Supplier 1 checks /events: rival events must be sanitized (zero leaks of carrier name, breakdown)
+    events_resp = client.get(
+        f"/api/v1/rfqs/{rfq_id}/events",
+        headers={"Authorization": f"Bearer {s1_token}"},
+    )
+    assert events_resp.status_code == 200
+    events_text = events_resp.text
+    assert "Maersk Confidential" not in events_text
+    for ev in events_resp.json():
+        if ev.get("payload"):
+            p = ev["payload"]
+            assert "freight_charges" not in p or p.get("supplier_id") == suppliers[1].id or p.get("freight_charges") is None
+            assert "carrier_name" not in p or p.get("supplier_id") == suppliers[1].id or p.get("carrier_name") == "Masked Carrier"
+
+    # 4. Supplier 1 checks /export-csv: must ONLY contain Supplier 1's own bids, never rival bids
+    csv_resp = client.get(
+        f"/api/v1/rfqs/{rfq_id}/export-csv",
+        headers={"Authorization": f"Bearer {s1_token}"},
+    )
+    assert csv_resp.status_code == 200
+    assert "Maersk Confidential" not in csv_resp.text
+    assert "Hapag Confidential" in csv_resp.text
+
+    # 5. Capture WebSocket messages for Supplier 1 and verify ZERO rival leaks
+    # Get a single-use ws-ticket for Supplier 1
+    s1_ticket_resp = client.post(
+        "/api/v1/auth/ws-ticket",
+        headers={"Authorization": f"Bearer {s1_token}"},
+    )
+    assert s1_ticket_resp.status_code == 200
+    s1_ws_ticket = s1_ticket_resp.json()["ticket"]
+
+    with client.websocket_connect(f"/api/v1/ws/rfqs/{rfq_id}?ticket={s1_ws_ticket}") as ws:
+        # Initial clock sync message
+        sync_msg = ws.receive_json(mode="text")
+        assert sync_msg.get("event_type") == "CLOCK_SYNC"
+
+        # Supplier 0 places a lower bid $1900 (triggering BID_SUBMITTED, L1_CHANGED, etc.)
+        s0_bid_resp2 = client.post(
+            f"/api/v1/rfqs/{rfq_id}/bids",
+            json={
+                "freight_charges": 1700.00,
+                "origin_charges": 100.00,
+                "destination_charges": 100.00,
+                "transit_time_days": 13,
+                "quote_validity_date": (now + timedelta(days=20)).isoformat(),
+                "carrier_name": "Maersk Confidential",
+            },
+            headers={"Authorization": f"Bearer {s0_token}"},
+        )
+        assert s0_bid_resp2.status_code == 201
+
+        # Read broadcast messages sent to Supplier 1
+        received_messages = []
+        for _ in range(2):
+            msg = ws.receive_json(mode="text")
+            received_messages.append(msg)
+
+        assert len(received_messages) > 0
+        for msg in received_messages:
+            msg_str = json.dumps(msg)
+            # ZERO rival carrier leaks anywhere in any message payload or notification text
+            assert "Maersk Confidential" not in msg_str
+            data = msg.get("data", {})
+            if msg.get("event_type") == "BID_SUBMITTED":
+                assert data.get("carrier_name") == "Masked Carrier"
+                assert data.get("freight_charges") is None
+                assert data.get("total") is None
+            elif msg.get("event_type") == "L1_CHANGED":
+                assert data.get("new_l1_supplier_id") == "competitor"
+                assert "Maersk" not in data.get("notification_text", "")
+            elif msg.get("event_type") == "RANK_CHANGED":
+                assert "previous_ranks" in data
+                assert "Maersk" not in data.get("notification_text", "")
+            elif msg.get("event_type") == "NEW_BID":
+                assert data.get("carrier_name") == "Masked Carrier"
+                assert data.get("freight_charges") is None
+
+    # 6. Buyer fetches RFQ: sees completely UNMASKED data
     buyer_rfq_resp = client.get(
         f"/api/v1/rfqs/{rfq_id}",
         headers={"Authorization": f"Bearer {buyer_token}"},
@@ -336,13 +449,38 @@ def test_bid_visibility_masked_payloads(client, buyer_user, suppliers, supplier_
     assert buyer_rankings[0]["carrier_name"] == "Maersk Confidential"
 
 
-def test_ws_ticket_and_first_message_auth(client, buyer_user):
+def test_ws_ticket_and_first_message_auth(client, buyer_user, suppliers):
+    import pytest
+    from starlette.websockets import WebSocketDisconnect
+    from app.services.auth import create_access_token
+
     # Login buyer
     buyer_login = client.post(
         "/api/v1/auth/login",
         json={"email": buyer_user.email, "password": "MeridianPass2026!"},
     )
     buyer_token = buyer_login.json()["access_token"]
+
+    now = datetime.now(timezone.utc)
+    rfq_resp = client.post(
+        "/api/v1/rfqs",
+        json={
+            "reference_id": f"RFQ-WS-{int(now.timestamp())}",
+            "title": "WebSocket Ticket Test RFQ",
+            "origin": "Rotterdam (NLRTM)",
+            "destination": "Singapore (SGSIN)",
+            "bid_start": (now - timedelta(hours=1)).isoformat(),
+            "bid_close": (now + timedelta(hours=2)).isoformat(),
+            "forced_close": (now + timedelta(hours=3)).isoformat(),
+            "pickup_date": (now + timedelta(days=10)).isoformat(),
+            "trigger_window_minutes": 10,
+            "extension_minutes": 5,
+            "trigger_type": "L1_CHANGE",
+            "invited_supplier_ids": [suppliers[0].id],
+        },
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+    rfq_id = rfq_resp.json()["id"]
 
     # 1. Request short-lived ticket
     ticket_resp = client.post(
@@ -353,6 +491,35 @@ def test_ws_ticket_and_first_message_auth(client, buyer_user):
     ticket_data = ticket_resp.json()
     assert "ticket" in ticket_data
     assert ticket_data["expires_in"] == 60
+    single_ticket = ticket_data["ticket"]
+
+    # 2. Connect with ticket - first use succeeds
+    with client.websocket_connect(f"/api/v1/ws/rfqs/{rfq_id}?ticket={single_ticket}") as ws:
+        pass
+
+    # 3. Single-use enforcement: re-using the exact same ticket MUST fail (closed with code 4001)
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect(f"/api/v1/ws/rfqs/{rfq_id}?ticket={single_ticket}") as ws2:
+            ws2.receive_text()
+    assert exc_info.value.code == 4001
+
+    # 4. Confirm query-string ?token= auth is gone (does not authenticate via query param)
+    with pytest.raises(WebSocketDisconnect) as exc_info_token:
+        with client.websocket_connect(f"/api/v1/ws/rfqs/{rfq_id}?token={buyer_token}") as ws3:
+            # Server does not authenticate query ?token=, expects AUTH message or closes with 4001
+            ws3.send_text(json.dumps({"action": "PING"}))
+            ws3.receive_text()
+    assert exc_info_token.value.code == 4001
+
+    # 5. Expired ticket fails after expiry (>60s)
+    expired_ticket = create_access_token(
+        data={"sub": buyer_user.id, "email": buyer_user.email, "role": "buyer", "ticket": True, "jti": "expired-jti"},
+        expires_delta=timedelta(seconds=-10),
+    )
+    with pytest.raises(WebSocketDisconnect) as exc_info_exp:
+        with client.websocket_connect(f"/api/v1/ws/rfqs/{rfq_id}?ticket={expired_ticket}") as ws4:
+            ws4.receive_text()
+    assert exc_info_exp.value.code == 4001
 
 
 def test_rate_limiting_returns_429(client, buyer_user):
@@ -367,6 +534,13 @@ def test_rate_limiting_returns_429(client, buyer_user):
     assert r_throttled.status_code == 429
     data = r_throttled.json()
     assert data["code"] == "RATE_LIMIT_EXCEEDED"
+    assert "Retry-After" in r_throttled.headers
+
+    # Normal browsing (listing RFQs, live room) does not trigger 429 under reasonable usage
+    browse_headers = {"X-Test-Client-Id": "normal-browser-ip"}
+    for _ in range(10):
+        r_browse = client.get("/api/v1/rfqs", headers=browse_headers)
+        assert r_browse.status_code in [200, 401]
     assert "Retry-After" in r_throttled.headers
 
 
