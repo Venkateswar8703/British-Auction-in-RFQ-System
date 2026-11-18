@@ -1,0 +1,109 @@
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import { WebSocketAuctionPayload } from '../types';
+
+interface WebSocketContextType {
+  isConnected: boolean;
+  clockOffsetMs: number;
+  getServerNow: () => Date;
+  subscribeRfq: (rfqId: string, handler: (msg: WebSocketAuctionPayload) => void) => () => void;
+}
+
+const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
+
+export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [clockOffsetMs, setClockOffsetMs] = useState<number>(0);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const activeSocketsRef = useRef<Map<string, WebSocket>>(new Map());
+  const handlersRef = useRef<Map<string, Set<(msg: WebSocketAuctionPayload) => void>>>(new Map());
+
+  // Function to return current estimated server time
+  const getServerNow = useCallback(() => {
+    return new Date(Date.now() + clockOffsetMs);
+  }, [clockOffsetMs]);
+
+  const subscribeRfq = useCallback((rfqId: string, handler: (msg: WebSocketAuctionPayload) => void) => {
+    if (!handlersRef.current.has(rfqId)) {
+      handlersRef.current.set(rfqId, new Set());
+    }
+    handlersRef.current.get(rfqId)!.add(handler);
+
+    // If socket doesn't exist for this RFQ, open one
+    if (!activeSocketsRef.current.has(rfqId)) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/rfqs/${rfqId}`;
+      const socket = new WebSocket(wsUrl);
+
+      socket.onopen = () => {
+        setIsConnected(true);
+        // Request clock sync
+        const clientSentMs = Date.now();
+        socket.send(JSON.stringify({ action: 'CLOCK_SYNC', client_sent_ms: clientSentMs }));
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const payload: WebSocketAuctionPayload = JSON.parse(event.data);
+          const clientReceiveMs = Date.now();
+
+          // Calculate server time offset
+          if (payload.server_time) {
+            const serverMs = new Date(payload.server_time).getTime();
+            // Offset = server_time - client_receive_time
+            const calculatedOffset = serverMs - clientReceiveMs;
+            setClockOffsetMs(calculatedOffset);
+          }
+
+          // Dispatch to all subscribers for this rfqId
+          const subscribers = handlersRef.current.get(rfqId);
+          if (subscribers) {
+            subscribers.forEach((sub) => sub(payload));
+          }
+        } catch {
+          // ignore parse errors
+        }
+      };
+
+      socket.onclose = () => {
+        activeSocketsRef.current.delete(rfqId);
+        setIsConnected(activeSocketsRef.current.size > 0);
+      };
+
+      socket.onerror = () => {
+        socket.close();
+      };
+
+      activeSocketsRef.current.set(rfqId, socket);
+    }
+
+    // Unsubscribe cleanup
+    return () => {
+      const subscribers = handlersRef.current.get(rfqId);
+      if (subscribers) {
+        subscribers.delete(handler);
+        if (subscribers.size === 0) {
+          handlersRef.current.delete(rfqId);
+          const socket = activeSocketsRef.current.get(rfqId);
+          if (socket) {
+            socket.close();
+            activeSocketsRef.current.delete(rfqId);
+          }
+        }
+      }
+    };
+  }, []);
+
+  return (
+    <WebSocketContext.Provider value={{ isConnected, clockOffsetMs, getServerNow, subscribeRfq }}>
+      {children}
+    </WebSocketContext.Provider>
+  );
+};
+
+export const useWebSocket = () => {
+  const context = useContext(WebSocketContext);
+  if (!context) {
+    throw new Error('useWebSocket must be used within a WebSocketProvider');
+  }
+  return context;
+};
+

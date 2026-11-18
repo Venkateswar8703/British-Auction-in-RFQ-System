@@ -1,0 +1,176 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #F3F1E9;
+  --surface: #FAF9F4;
+  --surface-deep: #E9E6DA;
+  --ink: #171A19;
+  --ink-2: #202522;
+  --muted: #898F87;
+  --line: rgba(23, 26, 25, 0.14);
+  --line-strong: rgba(23, 26, 25, 0.85);
+  --lime: #C5F36B;
+  --orange: #E4774D;
+  --instrument-bg: #171A19;
+}
+
+@layer base {
+  * {
+    border-color: rgba(23, 26, 25, 0.14);
+  }
+  body {
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    letter-spacing: -0.01em;
+    min-height: 100vh;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', sans-serif;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+  }
+}
+
+/* Tabular figures for all financial values, timestamps, and codes */
+.font-mono, .tabular-nums {
+  font-family: 'IBM Plex Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Faint 8px technical drawing grid (4% opacity) for header areas */
+.technical-grid {
+  background-image: 
+    linear-gradient(to right, rgba(23, 26, 25, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(23, 26, 25, 0.04) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+
+/* Editorial rule (top-border on section headers) */
+.editorial-rule {
+  border-top: 1px solid rgba(23, 26, 25, 0.85);
+}
+
+/* Hairline standard separator */
+.hairline {
+  border-color: rgba(23, 26, 25, 0.14);
+}
+
+/* Buttons (Accessibility-safe & Sharp) */
+.btn-primary {
+  background-color: #C5F36B;
+  color: #171A19;
+  border: 1px solid #171A19;
+  font-weight: 600;
+  border-radius: 0px;
+  transition: all 180ms ease-out;
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: #171A19;
+  color: #C5F36B;
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: #171A19;
+  border: 1px solid #171A19;
+  font-weight: 500;
+  border-radius: 0px;
+  transition: all 180ms ease-out;
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: #E9E6DA;
+}
+
+.btn-warning {
+  background-color: #E4774D;
+  color: #171A19;
+  border: 1px solid #171A19;
+  font-weight: 600;
+  border-radius: 0px;
+  transition: all 180ms ease-out;
+}
+.btn-warning:hover:not(:disabled) {
+  background-color: #171A19;
+  color: #E4774D;
+}
+
+/* Underlined editorial form input */
+.input-underlined {
+  background-color: transparent;
+  border-bottom: 1px solid rgba(23, 26, 25, 0.35);
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  border-radius: 0px;
+  outline: none;
+  padding: 8px 4px;
+  color: #171A19;
+  transition: all 150ms ease-out;
+}
+.input-underlined:focus {
+  border-bottom: 2px solid #C5F36B;
+  outline: 1px solid #171A19;
+}
+
+/* Subtle light scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #E9E6DA;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(23, 26, 25, 0.25);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(23, 26, 25, 0.5);
+}
+
+/* Hazard striped edge for forced close */
+.hazard-stripes {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    #E4774D,
+    #E4774D 10px,
+    #171A19 10px,
+    #171A19 16px
+  );
+}
+
+/* Live blinking beacon */
+@keyframes beaconPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.92); }
+}
+
+.beacon-pulse {
+  animation: beaconPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Rank change flash (400ms fade) */
+@keyframes rankFlash {
+  0% { background-color: #C5F36B; }
+  100% { background-color: #FAF9F4; }
+}
+
+.rank-flash {
+  animation: rankFlash 400ms ease-out;
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
