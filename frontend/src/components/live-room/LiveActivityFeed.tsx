@@ -28,7 +28,12 @@ export const LiveActivityFeed: React.FC<LiveActivityFeedProps> = ({ items }) => 
         </span>
       </div>
 
-      <div className="space-y-2 overflow-y-auto max-h-[240px] font-mono text-[11px] pr-1">
+      <div 
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        className="space-y-2 overflow-y-auto max-h-[240px] font-mono text-[11px] pr-1"
+      >
         {items.length === 0 ? (
           <div className="py-8 text-center text-meridian-muted text-xs">
             Listening for live auction transmissions...

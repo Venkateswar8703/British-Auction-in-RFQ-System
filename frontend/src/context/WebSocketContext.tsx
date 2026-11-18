@@ -45,7 +45,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // Broadcast reconnect event so pages can resync state
         const subscribers = handlersRef.current.get(rfqId);
         if (subscribers) {
-          subscribers.forEach((sub) => sub({ event_type: 'RECONNECTED', rfq_id: rfqId, server_time: new Date().toISOString() }));
+          subscribers.forEach((sub) => sub({ event_type: 'RECONNECTED', rfq_id: rfqId, server_time: new Date().toISOString(), data: {} }));
         }
       };
 

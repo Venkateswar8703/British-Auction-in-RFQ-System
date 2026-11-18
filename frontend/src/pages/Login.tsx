@@ -126,32 +126,34 @@ export const Login: React.FC = () => {
 
         <form onSubmit={handleLogin} className="space-y-4 font-mono text-xs">
           <div>
-            <label className="text-[11px] uppercase tracking-[0.08em] text-meridian-muted block mb-1">
+            <label htmlFor="login-email" className="text-[11px] uppercase tracking-[0.08em] text-meridian-muted block mb-1">
               Email Address
             </label>
             <div className="relative">
               <Mail className="w-4 h-4 text-meridian-muted absolute left-3 top-2.5" />
               <input
+                id="login-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-meridian-surface border border-meridian-line pl-9 pr-3 py-2 text-meridian-ink focus:border-meridian-ink outline-none"
+                className="w-full bg-meridian-surface border border-meridian-line pl-9 pr-3 py-2 text-meridian-ink focus:border-meridian-ink focus-visible:ring-2 focus-visible:ring-meridian-ink outline-none"
                 required
               />
             </div>
           </div>
 
           <div>
-            <label className="text-[11px] uppercase tracking-[0.08em] text-meridian-muted block mb-1">
+            <label htmlFor="login-password" className="text-[11px] uppercase tracking-[0.08em] text-meridian-muted block mb-1">
               Password
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 text-meridian-muted absolute left-3 top-2.5" />
               <input
+                id="login-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-meridian-surface border border-meridian-line pl-9 pr-3 py-2 text-meridian-ink focus:border-meridian-ink outline-none"
+                className="w-full bg-meridian-surface border border-meridian-line pl-9 pr-3 py-2 text-meridian-ink focus:border-meridian-ink focus-visible:ring-2 focus-visible:ring-meridian-ink outline-none"
                 required
               />
             </div>
@@ -160,7 +162,7 @@ export const Login: React.FC = () => {
           <button
             type="submit"
             disabled={isLoading}
-            className="btn-primary w-full py-3 font-mono font-bold uppercase tracking-wider text-xs"
+            className="btn-primary w-full py-3 font-mono font-bold uppercase tracking-wider text-xs focus-visible:ring-2 focus-visible:ring-meridian-ink outline-none"
           >
             {isLoading ? 'Verifying Credentials...' : 'Authenticate'}
           </button>

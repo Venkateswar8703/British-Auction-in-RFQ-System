@@ -34,6 +34,17 @@ export const BidSubmissionPanel: React.FC<BidSubmissionPanelProps> = ({
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [skipConfirmation, setSkipConfirmation] = useState<boolean>(false);
 
+  // Listen for Escape key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showConfirmModal) {
+        setShowConfirmModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showConfirmModal]);
+
   // Live total calculation
   const numFreight = parseFloat(freight) || 0;
   const numOrigin = parseFloat(origin) || 0;
@@ -299,14 +310,14 @@ export const BidSubmissionPanel: React.FC<BidSubmissionPanelProps> = ({
 
         {/* Feedback Alerts */}
         {errorMessage && (
-          <div className="p-3 bg-meridian-orange text-meridian-ink border border-meridian-ink text-xs font-mono flex items-center gap-2">
+          <div role="alert" aria-live="assertive" className="p-3 bg-meridian-orange text-meridian-ink border border-meridian-ink text-xs font-mono flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{errorMessage}</span>
           </div>
         )}
 
         {successMessage && (
-          <div className="p-3 bg-meridian-lime text-meridian-ink border border-meridian-ink text-xs font-mono font-semibold flex items-center gap-2">
+          <div role="status" aria-live="polite" className="p-3 bg-meridian-lime text-meridian-ink border border-meridian-ink text-xs font-mono font-semibold flex items-center gap-2">
             <CheckCircle className="w-4 h-4 shrink-0" />
             <span>{successMessage}</span>
           </div>
@@ -323,9 +334,18 @@ export const BidSubmissionPanel: React.FC<BidSubmissionPanelProps> = ({
 
       {/* Improvement #4: Pre-bid Confirmation Guardrail Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px]">
-          <div className="bg-meridian-surface border-2 border-meridian-ink shadow-float max-w-md w-full p-6 text-meridian-ink animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-meridian-orange pb-3 border-b border-meridian-line mb-4">
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px]"
+          onClick={() => setShowConfirmModal(false)}
+        >
+          <div 
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-meridian-surface border-2 border-meridian-ink shadow-float max-w-md w-full p-6 text-meridian-ink animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div id="confirm-modal-title" className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-meridian-orange pb-3 border-b border-meridian-line mb-4">
               <ShieldAlert className="w-4 h-4 text-meridian-orange" />
               Pre-Bid Confirmation Guardrail
             </div>
