@@ -103,6 +103,9 @@ For full sequence diagrams and transaction flows, see [`docs/HLD.md`](docs/HLD.m
 
 ## One-Command Quick Start
 
+> [!IMPORTANT]
+> **Deployment Architecture**: The British Auction engine requires continuous bidirectional WebSockets and transactional row locking (`SELECT ... FOR UPDATE` on PostgreSQL 16). The authoritative full stack runs via Docker Compose (`docker compose up --build`) or local services. Static frontend hosts (such as Vercel) without persistent backend WebSockets and database connectivity are not suitable for the live auction engine.
+
 ### Option A: Makefile (Instant Local Development)
 A complete `Makefile` is provided at the repository root for one-command operations:
 
