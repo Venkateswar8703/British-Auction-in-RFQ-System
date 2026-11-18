@@ -226,3 +226,21 @@ Append-only chronological audit log of all auction events.
 - **Tamper-Proof Trigger**:
   - `trg_prevent_audit_tampering` prevents any `UPDATE` or `DELETE` operations on this table, raising an uncatchable server-level exception `auction_events is append-only and cannot be modified or deleted`. Guaranteed immutable audit trail.
 
+---
+
+## 3. Standard API Error Status Agreement
+
+All system endpoints, engine validations, and client responses adhere to the following unified HTTP status contract:
+
+| Machine Error Code | HTTP Status | Domain Context & Trigger Condition |
+| :--- | :---: | :--- |
+| `SUPPLIER_NOT_INVITED` | **403 Forbidden** | Carrier account not present in `rfq_invitations` table for the specified RFQ. |
+| `BID_NOT_LOWER` | **400 Bad Request** | Submitted bid total is equal to or higher than carrier's own previous best quote, or fails `min_decrement`. |
+| `INVALID_VALIDITY_DATE` | **400 Bad Request** | Carrier quote validity date is prior to the RFQ pickup date. |
+| `VALIDATION_ERROR` (`INVALID_BID_AMOUNT`) | **422 Unprocessable Entity** | Non-positive, zero, or invalid numeric values for `freight_charges`, `origin_charges`, or `destination_charges`. |
+| `AUCTION_CLOSED` / `BID_AFTER_CLOSE` | **400 Bad Request** | Bid timestamp exceeds current `effective_close` or `forced_close`. |
+| `BUYER_ROLE_REQUIRED` | **403 Forbidden** | Supplier token attempting to access buyer administrative or creation endpoints. |
+| `INVALID_CREDENTIALS` | **401 Unauthorized** | Missing, malformed, or expired JWT token. |
+| `RATE_LIMIT_EXCEEDED` | **429 Too Many Requests** | Exceeded burst limit of 10 requests within a 1-second sliding window. |
+
+

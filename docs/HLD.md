@@ -152,8 +152,20 @@ sequenceDiagram
    - Suppliers can only view RFQs to which their organization has an active invitation record (`rfq_invitations`).
    - Suppliers can only submit bids for their own authenticated supplier profile.
 3. **Pessimistic Concurrency Control**:
-   - Every bid acquisition leverages row-level locking (`with_for_update()`) on Postgres, guaranteeing complete isolation during rank evaluation and extension application.
-   - SQLite fallback uses database-level transactions with immediate lock handling.
+   - Every bid acquisition leverages row-level locking (`with_for_update()`) on PostgreSQL, guaranteeing complete isolation during rank evaluation and extension application.
+   - SQLite development fallback serializes transactions at the database file level; true `SELECT ... FOR UPDATE` row-level locking is enforced only on PostgreSQL, which is the required production engine for concurrent bidding.
 4. **Idempotency Guard**:
    - An in-memory/database idempotency registry hashes incoming `Idempotency-Key` headers along with user tokens, returning cached results on duplicate network transmissions.
+
+---
+
+### 6. Standard Error Contract
+- `SUPPLIER_NOT_INVITED`: 403 Forbidden (Carrier account not in `rfq_invitations`)
+- `BID_NOT_LOWER`: 400 Bad Request (Total price not strictly lower than previous quote, or violates `min_decrement`)
+- `INVALID_VALIDITY_DATE`: 400 Bad Request (Validity date before pickup)
+- `VALIDATION_ERROR` (`INVALID_BID_AMOUNT`): 422 Unprocessable Entity (Zero, negative, or invalid charge breakdown)
+- `AUCTION_CLOSED`: 400 Bad Request (Bid received after effective close)
+- `BUYER_ROLE_REQUIRED`: 403 Forbidden (Supplier attempting to call buyer-only route)
+- `INVALID_CREDENTIALS`: 401 Unauthorized (Expired or invalid JWT)
+- `RATE_LIMIT_EXCEEDED`: 429 Too Many Requests (Excessive burst submissions)
 

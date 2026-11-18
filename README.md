@@ -40,7 +40,7 @@ In global freight procurement, standard static sealed bids or fixed-deadline rev
 | **Alembic Migrations** | `backend/alembic/versions/` | Production-ready SQL schema migrations |
 | **Backend Engine & APIs** | `backend/app/` | FastAPI, SQLAlchemy 2.x, Pydantic v2, WebSockets, background daemon |
 | **Frontend Application** | `frontend/` | React 18, TypeScript, Tailwind CSS, Framer Motion, IBM Plex Mono typography |
-| **Automated Test Suites** | `backend/tests/` & `frontend/src/tests/` | 15 backend pytest tests (90%+ engine coverage) + 19 frontend Vitest tests (All Passing) |
+| **Automated Test Suites** | `backend/tests/` & `frontend/src/tests/` | 15 backend pytest tests (92% engine coverage) + 19 frontend Vitest tests (All Passing) |
 | **Live Verification Suite** | `scripts/verify_live_scenarios.py` | 10 authoritative live API scenarios verified against running server |
 | **Docker Infrastructure** | `docker-compose.yml`, `Dockerfile.*` | Multi-container setup (PostgreSQL 16, FastAPI backend, Nginx frontend) |
 | **Makefile Automation** | `Makefile` | One-command targets (`make dev`, `make test`, `make seed`, `make demo`, `make verify`) |
@@ -101,7 +101,7 @@ A complete `Makefile` is provided at the repository root for one-command operati
 
 ```bash
 make dev      # Starts both backend (port 8000) and frontend (port 5173)
-make test     # Runs full backend pytest (91% engine coverage) and frontend Vitest suites
+make test     # Runs full backend pytest (92% engine coverage) and frontend Vitest suites
 make seed     # Reseeds database relative to now() with Scheduled, Active, Closed & Force Closed RFQs
 make demo     # Resets the signature live demo auction into its trigger window
 make verify   # Executes the 10 authoritative live API verification scenarios
@@ -127,9 +127,11 @@ docker-compose up --build
 
 ---
 
-### Option B: Local Development (SQLite Fallback, No Docker Needed)
+### Option C: Local Development (SQLite Fallback, No Docker Needed)
 
-MERIDIAN supports an instant zero-configuration local development mode using SQLite with full row-locking simulation.
+MERIDIAN supports a zero-configuration local development mode using SQLite.
+> [!NOTE]
+> SQLite serializes writes at the file level and does not support true row-level locking (`SELECT ... FOR UPDATE`). PostgreSQL 16 is the authoritative, production-supported database engine required for concurrent bidding.
 
 #### 1. Backend Setup (Terminal 1)
 ```bash
@@ -188,22 +190,22 @@ Follow these steps to demonstrate every requirement and dynamic mechanic of the 
 ### Scenario 1: The Live British Auction Soft-Close & Extension (Signature Flow)
 1. **Reset the Demo State**:
    - Run `python scripts/reseed.py --live-demo-only` (or click **"Reseed Live Demo RFQ"** in the Live Room).
-   - This sets up RFQ **`RFQ-2026-PAC-001`** (Transpacific FE-USWC) with:
+   - This sets up RFQ **`RFQ-2026-LIVE-DEMO`** (Transpacific Shanghai → Long Beach) with:
      - `bid_close` = Current time + 2 minutes 30 seconds
      - `trigger_window_minutes` ($X$) = 5 minutes (meaning the auction is *already inside the trigger window*)
      - `extension_minutes` ($Y$) = 3 minutes
-     - `forced_close` = Current time + 10 minutes
+     - `forced_close` = Current time + 15 minutes
 2. **Open the Live Auction Room**:
    - Log in as **Maersk Line** (click Maersk in the persona switcher).
-   - In the Supplier Portal or navigation, open `RFQ-2026-PAC-001`.
-   - Observe the **Live Millisecond Countdown**, the active **Rank Ladder** showing Hapag-Lloyd at L1 ($2,350), and the **Live Activity Feed**.
+   - In the Supplier Portal or navigation, open `RFQ-2026-LIVE-DEMO`.
+   - Observe the **Live Millisecond Countdown**, the active **Rank Ladder**, and the **Live Activity Feed**.
 3. **Submit a Competitive Underbid**:
-   - In the Bid Submission panel, click the preset **`-$50 Underbid`** button (or enter Freight: $1,800, Origin: $180, Destination: $170 = Total $2,150).
+   - In the Bid Submission panel, click the preset **`-$50 Underbid`** button.
    - Click **`Submit Authoritative Bid`**.
 4. **Observe Real-Time Dynamic Extension**:
    - A burnt-orange notification banner instantly animates into the center console:
-     > *"TRIGGER EXTENSION APPLIED: Bid by A.P. Moller - Maersk inside 5m window triggered dynamic extension (+3m). New close time: [HH:MM:SS]."*
-   - The countdown timer **adds 3 minutes in real time** without refreshing the page!
+     > *"TRIGGER EXTENSION APPLIED: Dynamic extension (+3m) triggered inside 5m window. New close: [HH:MM:SS]."*
+   - The countdown timer **adds exactly 3 minutes in real time** without refreshing the page!
    - In the right-hand panel, **Maersk immediately takes Rank L1**, and the activity feed broadcasts the new bid and extension to all connected users.
 
 ### Scenario 2: Multi-Bidder Concurrency Simulation
@@ -219,15 +221,16 @@ Follow these steps to demonstrate every requirement and dynamic mechanic of the 
 
 ### Scenario 3: British Auction Rejection Rules
 1. Try submitting a bid that is higher or equal to your own previous quote:
-   - If your previous bid was $2,150, enter Freight $2,000, Origin $200, Destination $200 (Total = $2,400).
-   - The client immediately warns: *"Bid total ($2,400) must be strictly lower than your previous quote ($2,150)"*.
-   - If forced past the client, the server returns an HTTP 422 `BID_NOT_LOWER` error.
+   - The client warns: *"Bid total must be strictly lower than your previous quote"*.
+   - If forced past the client, the server returns an **HTTP 400 `BID_NOT_LOWER`** error.
 2. Try submitting zero or negative amounts:
-   - The server validates all line items with HTTP 422 `INVALID_BID_AMOUNT`.
+   - The server validates all line items with **HTTP 422 `VALIDATION_ERROR`** (`Field greater than 0 required`).
+3. An uninvited carrier attempting to view or bid on the RFQ receives **HTTP 403 `SUPPLIER_NOT_INVITED`**.
+4. Bids submitted with a validity date before pickup receive **HTTP 400 `INVALID_VALIDITY_DATE`**.
 
 ### Scenario 4: Forced Close Clamping
-1. Let the auction receive bids until the effective close reaches the `forced_close` boundary (or set close time near forced close).
-2. When a bid arrives inside the trigger window:
+1. Let the auction receive bids until the effective close reaches the `forced_close` boundary.
+2. When a qualifying bid arrives inside the trigger window:
    - `new_close = min(effective_close + Y, forced_close)`
    - The engine caps the extension at `forced_close`.
    - An `EXTENSION_CAPPED` event is emitted: *"Dynamic extension capped by forced close limit"*.
@@ -236,10 +239,10 @@ Follow these steps to demonstrate every requirement and dynamic mechanic of the 
 ### Scenario 5: Buyer Command Center & Analytics
 1. Switch personas to **Buyer (Meridian Admin)**.
 2. Navigate to **Command Center**:
-   - View aggregate metrics: Total RFQs (14), Active (4), Closed (6), Force-Closed (2).
+   - View aggregate metrics: Total RFQs (14), Active (4), Closed (4), Force-Closed (3), Scheduled (3).
    - View the **Procurement Yield & Performance Chart**: Average price reduction from first quote to L1 across all finished auctions.
    - Inspect **Active Auctions Radar** with live countdown badges.
-3. Click on any completed RFQ (e.g. `RFQ-2026-EUR-002`) to view the **Audit Timeline**:
+3. Click on any completed RFQ to view the **Audit Timeline**:
    - Complete chronological audit log with distinct markers for `BID_SUBMITTED`, `EXTENSION_APPLIED`, `RANK_CHANGED`, and `AUCTION_CLOSED`.
 
 ---
@@ -334,9 +337,9 @@ cd frontend && npm test
 | :--- | :--- | :--- |
 | **Backend Framework** | FastAPI (Python 3.12+) | High performance asynchronous REST & native WebSocket support |
 | **ORM & Database** | SQLAlchemy 2.x + Alembic | Declarative data modeling, ACID transactions, migrations |
-| **Databases** | PostgreSQL 16 (Prod) / SQLite (Dev) | Row-level locking with graceful local development fallback |
+| **Databases** | PostgreSQL 16 (Prod & Concurrency) / SQLite (Dev) | PostgreSQL enforces true row-level locks (`SELECT ... FOR UPDATE`); SQLite serializes at file level |
 | **Security & Auth** | JWT (`python-jose`) + `bcrypt` | Role-based access control (`buyer`, `supplier`) |
-| **Real-Time** | Starlette WebSockets | Sub-50ms state synchronization across buyers and carriers |
+| **Real-Time** | Starlette WebSockets | Real-time state synchronization across buyers and carriers (measured ~37ms broadcast latency) |
 | **Frontend Framework** | React 18 + TypeScript + Vite | Rapid client-rendered UI with strong typing |
 | **Styling & Design** | Tailwind CSS | MERIDIAN industrial palette (`#171A19`, `#C5F36B`, `#E4774D`) |
 | **Typography** | Space Grotesk, Inter, IBM Plex Mono | Financial terminal density with tabular figures |

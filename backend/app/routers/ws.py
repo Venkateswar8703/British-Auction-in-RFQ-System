@@ -45,6 +45,11 @@ async def websocket_auction_endpoint(
             # Check invitation in database
             db = SessionLocal()
             try:
+                if not supplier_id:
+                    user_record = db.query(User).filter(User.id == user_id).first()
+                    if user_record:
+                        supplier_id = user_record.supplier_id
+
                 # Resolve rfq
                 rfq = db.query(RFQ).filter((RFQ.id == rfq_id) | (RFQ.reference_id == rfq_id)).first()
                 if not rfq:

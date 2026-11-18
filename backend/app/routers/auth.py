@@ -21,9 +21,11 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
             detail={"code": "INVALID_LOGIN", "message": "Incorrect email or password"},
         )
 
-    access_token = create_access_token(
-        data={"sub": user.id, "email": user.email, "role": user.role}
-    )
+    token_data = {"sub": user.id, "email": user.email, "role": user.role}
+    if user.supplier_id:
+        token_data["supplier_id"] = user.supplier_id
+
+    access_token = create_access_token(data=token_data)
     return TokenResponse(access_token=access_token, token_type="bearer", user=UserOut.model_validate(user))
 
 
