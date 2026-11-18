@@ -1,5 +1,7 @@
 # MERIDIAN — British Auction RFQ Procurement Exchange
 
+[![MERIDIAN CI Verification Suite](https://github.com/Venkateswar8703/British-Auction-in-RFQ-System/actions/workflows/ci.yml/badge.svg)](https://github.com/Venkateswar8703/British-Auction-in-RFQ-System/actions/workflows/ci.yml)
+
 > **Industrial-grade British Auction RFQ procurement system for ocean and air freight logistics.**
 > Built with strict server-side state enforcement, ACID row-level concurrency locking, real-time WebSocket state broadcasting with sub-second drift compensation, and a high-density financial terminal aesthetic.
 
