@@ -64,6 +64,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Structured JSON request logging middleware
+@app.middleware("http")
+async def structured_logging_middleware(request: Request, call_next):
+    start_time = asyncio.get_event_loop().time()
+    response = await call_next(request)
+    duration_ms = round((asyncio.get_event_loop().time() - start_time) * 1000, 2)
+    client_host = request.client.host if request.client else "unknown"
+    logger.info(
+        '{"event": "http_request", "method": "%s", "path": "%s", "status": %d, "duration_ms": %.2f, "client": "%s"}',
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+        client_host,
+    )
+    return response
+
 @app.get("/health", tags=["Health"])
 @app.get("/api/v1/health", tags=["Health"])
 async def health_check():
