@@ -28,9 +28,13 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     handlersRef.current.get(rfqId)!.add(handler);
 
     // If socket doesn't exist for this RFQ, open one
-    if (!activeSocketsRef.current.has(rfqId)) {
+    const connectSocket = () => {
+      if (activeSocketsRef.current.has(rfqId)) return;
+
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws/rfqs/${rfqId}`;
+      const token = localStorage.getItem('meridian_token');
+      const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+      const wsUrl = `${protocol}//${window.location.host}/ws/rfqs/${rfqId}${tokenParam}`;
       const socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
@@ -38,6 +42,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // Request clock sync
         const clientSentMs = Date.now();
         socket.send(JSON.stringify({ action: 'CLOCK_SYNC', client_sent_ms: clientSentMs }));
+        // Broadcast reconnect event so pages can resync state
+        const subscribers = handlersRef.current.get(rfqId);
+        if (subscribers) {
+          subscribers.forEach((sub) => sub({ event_type: 'RECONNECTED', rfq_id: rfqId, server_time: new Date().toISOString() }));
+        }
       };
 
       socket.onmessage = (event) => {
@@ -66,6 +75,15 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       socket.onclose = () => {
         activeSocketsRef.current.delete(rfqId);
         setIsConnected(activeSocketsRef.current.size > 0);
+        // If there are still active subscribers, automatically schedule reconnect
+        const subs = handlersRef.current.get(rfqId);
+        if (subs && subs.size > 0) {
+          setTimeout(() => {
+            if (handlersRef.current.get(rfqId)?.size) {
+              connectSocket();
+            }
+          }, 1500);
+        }
       };
 
       socket.onerror = () => {
@@ -73,6 +91,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       };
 
       activeSocketsRef.current.set(rfqId, socket);
+    };
+
+    if (!activeSocketsRef.current.has(rfqId)) {
+      connectSocket();
     }
 
     // Unsubscribe cleanup

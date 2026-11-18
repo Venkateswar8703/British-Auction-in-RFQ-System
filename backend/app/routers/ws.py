@@ -22,50 +22,53 @@ async def websocket_auction_endpoint(
     rfq_id: str,
     token: Optional[str] = Query(None)
 ):
-    # Security Check: If token is provided, authenticate and enforce invitation whitelist
-    if token:
-        try:
-            payload = jwt.decode(
-                token,
-                settings.JWT_SECRET,
-                algorithms=[settings.JWT_ALGORITHM],
-            )
-            role = payload.get("role")
-            supplier_id = payload.get("supplier_id")
-            user_id = payload.get("sub")
+    # Security: WebSocket requires authentication
+    if not token:
+        await websocket.close(code=4001, reason="Authentication token required")
+        return
 
-            if not user_id:
-                await websocket.close(code=4001, reason="Invalid token")
-                return
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+        role = payload.get("role")
+        supplier_id = payload.get("supplier_id")
+        user_id = payload.get("sub")
 
-            if role == UserRole.SUPPLIER.value:
-                # Check invitation in database
-                db = SessionLocal()
-                try:
-                    # Resolve rfq
-                    rfq = db.query(RFQ).filter((RFQ.id == rfq_id) | (RFQ.reference_id == rfq_id)).first()
-                    if not rfq:
-                        await websocket.close(code=4004, reason="RFQ not found")
-                        return
-
-                    invitation = (
-                        db.query(RFQInvitation)
-                        .filter(RFQInvitation.rfq_id == rfq.id, RFQInvitation.supplier_id == supplier_id)
-                        .first()
-                    )
-                    if not invitation:
-                        logger.warning(
-                            "Refusing WebSocket connection: Supplier %s not invited to RFQ %s",
-                            supplier_id,
-                            rfq.reference_id,
-                        )
-                        await websocket.close(code=4003, reason="Forbidden: Carrier not invited to this RFQ")
-                        return
-                finally:
-                    db.close()
-        except JWTError:
-            await websocket.close(code=4001, reason="Invalid or expired token")
+        if not user_id:
+            await websocket.close(code=4001, reason="Invalid token")
             return
+
+        if role == UserRole.SUPPLIER.value:
+            # Check invitation in database
+            db = SessionLocal()
+            try:
+                # Resolve rfq
+                rfq = db.query(RFQ).filter((RFQ.id == rfq_id) | (RFQ.reference_id == rfq_id)).first()
+                if not rfq:
+                    await websocket.close(code=4004, reason="RFQ not found")
+                    return
+
+                invitation = (
+                    db.query(RFQInvitation)
+                    .filter(RFQInvitation.rfq_id == rfq.id, RFQInvitation.supplier_id == supplier_id)
+                    .first()
+                )
+                if not invitation:
+                    logger.warning(
+                        "Refusing WebSocket connection: Supplier %s not invited to RFQ %s",
+                        supplier_id,
+                        rfq.reference_id,
+                    )
+                    await websocket.close(code=4003, reason="Forbidden: Carrier not invited to this RFQ")
+                    return
+            finally:
+                db.close()
+    except JWTError:
+        await websocket.close(code=4001, reason="Invalid or expired token")
+        return
 
     await ws_manager.connect(rfq_id, websocket)
     try:
