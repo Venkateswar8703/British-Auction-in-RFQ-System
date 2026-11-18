@@ -40,7 +40,7 @@ In global freight procurement, standard static sealed bids or fixed-deadline rev
 | **Alembic Migrations** | `backend/alembic/versions/` | Production-ready SQL schema migrations |
 | **Backend Engine & APIs** | `backend/app/` | FastAPI, SQLAlchemy 2.x, Pydantic v2, WebSockets, background daemon |
 | **Frontend Application** | `frontend/` | React 18, TypeScript, Tailwind CSS, Framer Motion, IBM Plex Mono typography |
-| **Automated Test Suites** | `backend/tests/` & `frontend/src/tests/` | 12 backend pytest tests (91% engine coverage) + 19 frontend Vitest tests (All Passing) |
+| **Automated Test Suites** | `backend/tests/` & `frontend/src/tests/` | 15 backend pytest tests (90%+ engine coverage) + 19 frontend Vitest tests (All Passing) |
 | **Live Verification Suite** | `scripts/verify_live_scenarios.py` | 10 authoritative live API scenarios verified against running server |
 | **Docker Infrastructure** | `docker-compose.yml`, `Dockerfile.*` | Multi-container setup (PostgreSQL 16, FastAPI backend, Nginx frontend) |
 | **Makefile Automation** | `Makefile` | One-command targets (`make dev`, `make test`, `make seed`, `make demo`, `make verify`) |
@@ -263,10 +263,9 @@ elif trigger_type == TriggerType.ANY_RANK_CHANGE:
 elif trigger_type == TriggerType.L1_CHANGE:
     qualifies = is_in_window and (new_l1_supplier_id != old_l1_supplier_id)
 
-# Dynamic extension calculation:
+# Dynamic extension calculation (strictly bounded by forced_close):
 if qualifies:
-    extension_target = max(effective_close + timedelta(minutes=Y), bid_time + timedelta(minutes=Y))
-    new_close = min(extension_target, rfq.forced_close)
+    new_close = min(effective_close + timedelta(minutes=Y), rfq.forced_close)
 ```
 
 ### Concurrency & Data Integrity
@@ -295,7 +294,7 @@ if qualifies:
 
 Both the backend and frontend have comprehensive automated test suites:
 
-### Backend pytest Suite (12 Tests)
+### Backend pytest Suite (15 Tests)
 Run from root:
 ```bash
 .venv/bin/pytest backend/tests/ -v
@@ -307,10 +306,14 @@ Run from root:
 - `test_trigger_type_any_rank_change`: Verifies rank change criteria (bottom entrants do not trigger; swapping L2/L3 triggers).
 - `test_extension_clamped_and_capped`: Clamping to `forced_close` and emission of `EXTENSION_CAPPED`.
 - `test_bid_validation_rejections`: Tests `BID_NOT_LOWER`, negative charges, past deadlines, and uninvited carriers.
-- `test_bid_tie_breaking_earlier_timestamp`: Ties broken by earlier timestamp.
-- `test_bid_idempotency_key`: Deduplication via `Idempotency-Key`.
-- `test_status_transition_closed_and_force_closed`: Transitions to `CLOSED` vs `FORCE_CLOSED`.
-- `test_multithreaded_concurrent_bids`: 8 concurrent threads firing simultaneous bids to verify zero lost updates.
+- `test_ranking_and_tie_breaking`: Ties broken by earlier timestamp.
+- `test_idempotency_key_replay`: Deduplication via `Idempotency-Key`.
+- `test_status_transitions`: Transitions to `CLOSED` vs `FORCE_CLOSED`.
+- `test_schema_forced_close_validation`: Database CHECK constraints prevent invalid auction durations.
+- `test_concurrent_bids_consistency`: Concurrent threads firing simultaneous bids to verify zero lost updates.
+- `test_row_lock_with_for_update_proof`: Proof of `with_for_update()` row-level pessimistic locking.
+- `test_configurable_min_decrement_enforcement`: Rejection of bids failing to meet `min_decrement`.
+- `test_auction_events_tamper_proof_trigger`: Trigger blocking UPDATE/DELETE on `auction_events`.
 
 ### Frontend Vitest Suite (17 Tests)
 Run from `frontend/`:

@@ -66,6 +66,7 @@ erDiagram
         integer trigger_window_minutes "X"
         integer extension_minutes "Y"
         string trigger_type "BID_RECEIVED | ANY_RANK_CHANGE | L1_CHANGE"
+        decimal min_decrement "CHECK >= 0, nullable"
         datetime created_at
         datetime updated_at
     }
@@ -168,6 +169,7 @@ British auction timing and trigger configuration.
 - `trigger_window_minutes`: INTEGER, Not Null (X). `CHECK (trigger_window_minutes > 0)`.
 - `extension_minutes`: INTEGER, Not Null (Y). `CHECK (extension_minutes > 0)`.
 - `trigger_type`: VARCHAR(30), Not Null. Enum: `'BID_RECEIVED'`, `'ANY_RANK_CHANGE'`, `'L1_CHANGE'`.
+- `min_decrement`: NUMERIC(12, 2), Nullable, Default `0.00`. Optional minimum price decrement required below the supplier's previous bid. `CHECK (min_decrement >= 0)`.
 
 ### 2.5 `rfq_invitations`
 Whitelist mapping which suppliers can inspect and participate in an RFQ.
@@ -221,4 +223,6 @@ Append-only chronological audit log of all auction events.
 - **Indexes**:
   - `CREATE INDEX idx_auction_events_rfq_created ON auction_events(rfq_id, created_at);`
   - `CREATE INDEX idx_rfqs_status_effective ON rfqs(status, effective_close);`
+- **Tamper-Proof Trigger**:
+  - `trg_prevent_audit_tampering` prevents any `UPDATE` or `DELETE` operations on this table, raising an uncatchable server-level exception `auction_events is append-only and cannot be modified or deleted`. Guaranteed immutable audit trail.
 

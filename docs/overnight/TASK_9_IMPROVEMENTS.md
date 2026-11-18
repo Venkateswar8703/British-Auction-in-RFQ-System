@@ -121,3 +121,4 @@ backend/tests/test_min_decrement.py::test_configurable_min_decrement_enforcement
 | **Savings Analytics** | `backend/app/routers/analytics.py` & `CommandCenter.tsx` | Vitest + Backend API tests | **PASS** |
 | **Tamper-Proof Trigger** | PostgreSQL trigger on `auction_events` | `test_tamper_proof.py` | **PASS** |
 | **Min Decrement Rule** | Alembic migration + Engine validation | `test_min_decrement.py` | **PASS** |
+
