@@ -5,12 +5,15 @@ Executes all 10 authoritative auction engine scenarios against the running API
 and prints full request, response, and timeline proofs.
 """
 import sys
+import os
 import json
 import uuid
 import time
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta, timezone
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend")))
 
 API_BASE = "http://localhost:8000/api/v1"
 
@@ -539,7 +542,7 @@ def run_all_verifications():
     print("SCENARIO 10: Natural Expiry -> CLOSED vs Extension Ceiling Expiry -> FORCE_CLOSED")
     print("-" * 80)
     from app.database import SessionLocal
-    from app.models.entities import RFQ
+    from app.models.entities import RFQ, AuctionEvent
     from app.services.auction_engine import check_and_update_rfq_status
 
     # 10.1 Natural expiry without extensions reaching forced_close
@@ -563,10 +566,15 @@ def run_all_verifications():
         check_and_update_rfq_status(db, rfq_nat, now_eval)
         db.commit()
         nat_status = rfq_nat.status
+        nat_events = db.query(AuctionEvent).filter(AuctionEvent.rfq_id == rfq_nat.id).all()
+        nat_event_records = [(e.event_type, e.payload) for e in nat_events]
     finally:
         db.close()
 
     print(f"10.1 Unextended Expired RFQ Status: {nat_status} (Expected: CLOSED)")
+    print(f"10.1 Events Logged for CLOSED RFQ ({len(nat_event_records)}):")
+    for ev_type, p in nat_event_records:
+        print(f"     - Type: {ev_type} | Payload: {p}")
     assert nat_status == "CLOSED", f"Expected CLOSED, got {nat_status}"
 
     # 10.2 Extended to forced_close and expired
@@ -590,10 +598,15 @@ def run_all_verifications():
         check_and_update_rfq_status(db, rfq_force, now_eval)
         db.commit()
         force_status = rfq_force.status
+        force_events = db.query(AuctionEvent).filter(AuctionEvent.rfq_id == rfq_force.id).all()
+        force_event_records = [(e.event_type, e.payload) for e in force_events]
     finally:
         db.close()
 
     print(f"10.2 Extended to Ceiling RFQ Status: {force_status} (Expected: FORCE_CLOSED)")
+    print(f"10.2 Events Logged for FORCE_CLOSED RFQ ({len(force_event_records)}):")
+    for ev_type, p in force_event_records:
+        print(f"     - Type: {ev_type} | Payload: {p}")
     assert force_status == "FORCE_CLOSED", f"Expected FORCE_CLOSED, got {force_status}"
     print("✓ Proof 10: Natural deadline moves to CLOSED; extension-capped deadline moves to FORCE_CLOSED!")
 

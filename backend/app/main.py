@@ -1,3 +1,4 @@
+import os
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -21,13 +22,14 @@ logger = logging.getLogger("meridian")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: ensure live demo auction is active on every startup
-    try:
-        from app.seeds.seed_data import reseed_live_demo
-        reseed_live_demo()
-        logger.info("Live demo auction primed and active on startup.")
-    except Exception as e:
-        logger.warning("Could not auto-prime live demo on startup: %s", e)
+    # Startup: ensure live demo auction is active on every startup (unless running tests)
+    if not os.environ.get("TESTING"):
+        try:
+            from app.seeds.seed_data import reseed_live_demo
+            reseed_live_demo()
+            logger.info("Live demo auction primed and active on startup.")
+        except Exception as e:
+            logger.warning("Could not auto-prime live demo on startup: %s", e)
 
     # Startup: launch background sweeper
     sweeper_task = asyncio.create_task(auction_status_sweeper_task())

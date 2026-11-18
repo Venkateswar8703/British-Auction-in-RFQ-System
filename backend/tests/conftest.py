@@ -1,5 +1,7 @@
 import os
 import sys
+
+os.environ["TESTING"] = "1"
 import pytest
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
