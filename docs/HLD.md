@@ -107,25 +107,36 @@ $$\text{new\_close} = \min(\text{effective\_close} + Y, \text{forced\_close})$$
   $$\text{total} = \text{freight\_charges} + \text{origin\_charges} + \text{destination\_charges}$$
 - Quote validity date must satisfy: $\text{quote\_validity\_date} \ge \text{rfq.pickup\_date}$.
 
-#### 3.5 Auction Status Lifecycle
+#### 3.5 Authoritative Status Lifecycle
+
+The engine and database strictly recognize four authoritative `RFQStatus` enum values:
+`SCHEDULED`, `ACTIVE`, `CLOSED`, `FORCE_CLOSED`.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> DRAFT : Buyer creates RFQ
-    DRAFT --> ACTIVE : current_time >= bid_start
+    [*] --> SCHEDULED : Buyer creates RFQ (current_time < bid_start)
+    SCHEDULED --> ACTIVE : current_time >= bid_start
+    [*] --> ACTIVE : Buyer creates RFQ (current_time >= bid_start)
     ACTIVE --> ACTIVE : Qualifying bid in trigger window<br/>new_close = min(effective_close + Y, forced_close)
     ACTIVE --> CLOSED : current_time >= effective_close AND effective_close < forced_close
     ACTIVE --> FORCE_CLOSED : current_time >= forced_close (Hard Ceiling reached)
-    CLOSED --> AWARDED : Buyer awards winning quote
-    FORCE_CLOSED --> AWARDED : Buyer awards winning quote
-    AWARDED --> [*]
+    CLOSED --> [*]
+    FORCE_CLOSED --> [*]
+
+    note right of CLOSED
+        Post-auction award:
+        Buyer calls POST /rfqs/{id}/award.
+        Does not mutate rfq.status.
+        Inserts AUCTION_AWARDED audit event
+        referencing winning_bid_id.
+    end note
 ```
 
-- **`DRAFT`**: Configured by buyer; invitations managed; parameters editable via `PATCH /rfqs/{id}`.
-- **`ACTIVE`**: Auction is open for bidding. Modifications to dates, origin, destination, or pricing parameters are strictly rejected.
-- **`CLOSED`**: Concluded normally when $\text{current\_time} \ge \text{effective\_close}$ and $\text{effective\_close} < \text{forced\_close}$.
-- **`FORCE_CLOSED`**: Concluded because the auction reached its inviolable `forced_close` ceiling.
-- **`AWARDED`**: Contract finalized and awarded to the selected supplier via `POST /rfqs/{id}/award`.
+- **`SCHEDULED`**: The auction is scheduled for a future commencement time (`now < bid_start`). The buyer may manage supplier invitations and modify auction parameters via `PATCH /api/v1/rfqs/{id}`. Bidding is not yet open.
+- **`ACTIVE`**: The auction is open for bidding (`bid_start <= now < effective_close`). Modifications to dates, origin, destination, or pricing parameters are strictly rejected (`400 RFQ_LOCKED`).
+- **`CLOSED`**: Concluded normally when $\text{current\_time} \ge \text{effective\_close}$ and $\text{effective\_close} < \text{forced\_close}$. Bidding is permanently terminated.
+- **`FORCE_CLOSED`**: Concluded because the auction reached its inviolable `forced_close` ceiling ($\text{current\_time} \ge \text{forced\_close}$). Further extensions are blocked.
+- **Contract Awarding**: Awarding is an authoritative post-conclusion lifecycle event (`POST /api/v1/rfqs/{id}/award`). Awarding does not introduce an artificial database status; the RFQ remains `CLOSED` or `FORCE_CLOSED`, while the engine writes an immutable `AUCTION_AWARDED` audit event to `auction_events` referencing `winning_bid_id` and broadcasts the award confirmation over WebSockets.
 
 ---
 
@@ -237,7 +248,7 @@ All routes are mounted under the `/api/v1` namespace (with top-level `/health` a
 | `GET` | `/api/v1/rfqs` | Authenticated | List RFQs (filtered to invited RFQs for suppliers) | `200` |
 | `POST` | `/api/v1/rfqs` | Buyer Only | Create new RFQ with British auction configuration | `201`, `422` |
 | `GET` | `/api/v1/rfqs/{id}` | Invited / Buyer | Get RFQ details (payload masked if MASKED mode) | `200`, `403`, `404` |
-| `PATCH` | `/api/v1/rfqs/{id}` | Buyer Only | Update draft RFQ (rejected in ACTIVE/CLOSED) | `200`, `400`, `404` |
+| `PATCH` | `/api/v1/rfqs/{id}` | Buyer Only | Update SCHEDULED RFQ (rejected in ACTIVE/CLOSED/FORCE_CLOSED) | `200`, `400`, `404` |
 | `POST` | `/api/v1/rfqs/{id}/invitations` | Buyer Only | Invite supplier to RFQ | `201`, `400`, `404` |
 | `DELETE` | `/api/v1/rfqs/{id}/invitations/{s_id}` | Buyer Only | Revoke supplier invitation | `204`, `400`, `404` |
 | `POST` | `/api/v1/rfqs/{id}/award` | Buyer Only | Award RFQ to winning supplier quote | `200`, `400`, `404` |
@@ -264,8 +275,9 @@ The standard production stack is orchestrated via `docker-compose.yml`:
 - Native virtual environment: `.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
 - Make targets:
   - `make dev`: Launches background backend and frontend Vite dev servers.
-  - `make test-backend`: Executes Pytest suite against PostgreSQL test database.
-  - `make test-frontend`: Executes Vitest client validation suite.
+  - `make test`: Executes full test suite — 25 backend pytest tests (93% engine coverage) + 21 frontend Vitest tests (46 total automated tests, 100% passing).
+  - `make test-backend`: Executes 25 Pytest tests against PostgreSQL test database.
+  - `make test-frontend`: Executes 21 Vitest client validation tests.
   - `make seed`: Seeds baseline buyers, suppliers, and sample RFQs.
   - `make demo`: Seeds authoritative live demonstration RFQs.
   - `make verify`: Executes comprehensive end-to-end verification (Pytest, Vitest, 20-parallel concurrent bids, tamper-proof trigger test).

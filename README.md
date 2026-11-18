@@ -39,7 +39,7 @@ In global freight procurement, standard static sealed bids or fixed-deadline rev
 The full technical and architectural specifications for the MERIDIAN British Auction RFQ Procurement Exchange are documented below:
 
 - **[High-Level Design (HLD)](docs/HLD.md)**: Simple HLD covering domain purpose, component architecture, British auction dynamic extension formula $\min(\text{effective\_close} + Y, \text{forced\_close})$, auction status lifecycle, transaction sequence diagram (`SELECT ... FOR UPDATE` row locking, commit, WebSocket broadcast), access control, complete OpenAPI route catalog, deployment, and known limitations.
-- **[Database Schema Design & Live PostgreSQL Specification](docs/SCHEMA.md)**: Relational schema generated directly from live PostgreSQL (`meridian_db`) via `pg_dump --schema-only --no-owner` and `\d+` outputs. Includes Mermaid ERD, column types, CHECK constraints (component sums, non-negative charges), partial unique composite indexes, referential integrity (`RESTRICT` on triggering bids and audit logs), and the tamper-proof append-only trigger.
+- **[Database Schema Design & Live PostgreSQL Specification](docs/SCHEMA.md)**: Relational schema generated directly from live PostgreSQL (`meridian_db`) via `pg_dump --schema-only --no-owner` and `\d+` outputs. Includes Mermaid ERD, column types, CHECK constraints (component sums, non-negative charges), partial unique composite indexes, referential integrity (`RESTRICT` on triggering bids and audit logs), and the tamper-proof append-only trigger. Verbatim DDL available at [`docs/schema_dump.sql`](docs/schema_dump.sql).
 - **[System Architecture Diagram (High-Resolution)](docs/architecture.png)**: High-resolution export of the multi-tier system topology (React frontend, Nginx reverse proxy, FastAPI backend services, core auction engine, WebSocket hub, background sweeper, and PostgreSQL 16 persistence).
 
 ---
@@ -51,6 +51,7 @@ The full technical and architectural specifications for the MERIDIAN British Auc
 | **High-Level Design (HLD)** | [`docs/HLD.md`](docs/HLD.md) | Architectural diagram (Mermaid), ACID transaction lifecycle, drift sync, RBAC matrix |
 | **Database Schema & ERD** | [`docs/SCHEMA.md`](docs/SCHEMA.md) | Entity Relationship Diagram (Mermaid), 8 relational tables, CHECK constraints, composite indexes |
 | **Architecture Diagram (PNG)** | [`docs/architecture.png`](docs/architecture.png) | High-resolution architecture export rendered with mermaid-cli |
+| **PostgreSQL Schema Dump** | [`docs/schema_dump.sql`](docs/schema_dump.sql) | Verbatim live PostgreSQL DDL dump (`pg_dump --schema-only --no-owner`) |
 | **Alembic Migrations** | `backend/alembic/versions/` | Production-ready SQL schema migrations |
 | **Backend Engine & APIs** | `backend/app/` | FastAPI, SQLAlchemy 2.x, Pydantic v2, WebSockets, background daemon |
 | **Frontend Application** | `frontend/` | React 18, TypeScript, Tailwind CSS, Framer Motion, IBM Plex Mono typography |

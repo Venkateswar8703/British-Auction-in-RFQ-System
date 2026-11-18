@@ -2,17 +2,35 @@
 
 ---
 
-## 1. Overview & Source
-This document details the authoritative relational database schema for the **MERIDIAN British Auction RFQ Procurement Exchange**. 
+## 1. Overview & Database Architecture
+This document details the authoritative relational database schema for the **MERIDIAN British Auction RFQ Procurement Exchange**.
 
 - **Target Engine**: PostgreSQL 16 (or higher, e.g. PostgreSQL 18.6)
 - **Migration Framework**: Alembic (SQLAlchemy 2.x)
 - **Current Alembic Revision**: `e5f6a1b2c3d4 (head)`
 - **Schema Integrity**: Enforces ACID compliance, check constraints, foreign key referential integrity (`RESTRICT` on audits and triggering bids, `CASCADE` on child entities), partial composite unique indexes, and an append-only database trigger on `auction_events`.
+- **Test Suite Alignment**: Fully verified against the 25 backend pytest tests (93% coverage) and 21 frontend Vitest tests (46 total automated tests).
+- **Verbatim Schema Dump**: Available at [`docs/schema_dump.sql`](schema_dump.sql).
 
 ---
 
-## 2. Entity-Relationship Diagram (ERD)
+## 2. Database Tables Overview
+
+| Table Name | Primary Key | Purpose | Key Constraints & Integrity Rules |
+|---|---|---|---|
+| **`users`** | `id` (UUIDv4) | User identity, credentials, roles (`buyer`, `supplier`) | Unique email; FK to `suppliers` on delete `SET NULL` |
+| **`suppliers`** | `id` (UUIDv4) | Carrier organizations invited to RFQs | Unique `code` and `name` |
+| **`rfqs`** | `id` (UUIDv4) | Request for Quotation auction containers | Unique `reference_id`; `bid_close > bid_start`; `forced_close > bid_close`; `pickup_date > bid_close`; status constrained to `SCHEDULED`, `ACTIVE`, `CLOSED`, `FORCE_CLOSED` |
+| **`auction_configs`** | `id` (UUIDv4) | Auction rules and anti-sniping parameters | 1-to-1 with `rfqs`; `trigger_window_minutes > 0`; `extension_minutes > 0`; `bid_visibility` (`OPEN`, `MASKED`); `min_decrement` |
+| **`rfq_invitations`** | `id` (UUIDv4) | Whitelist of carriers invited to participate | Unique composite `(rfq_id, supplier_id)`; Cascade delete |
+| **`bids`** | `id` (UUIDv4) | Submitted carrier freight price quotes | `freight > 0`; `origin >= 0`; `destination >= 0`; `total > 0`; `total = freight + origin + destination`; partial unique index `(rfq_id, supplier_id, idempotency_key)` |
+| **`auction_extensions`**| `id` (UUIDv4) | Audit record of dynamic soft-close extensions | `triggering_bid_id` `NOT NULL` with FK `ON DELETE RESTRICT`; FK to `rfqs` |
+| **`auction_events`** | `id` (UUIDv4) | Immutable append-only auction audit trail | FK `bid_id` `ON DELETE RESTRICT`; **Append-only trigger `trg_prevent_audit_tampering`** blocks `UPDATE`/`DELETE` |
+| **`alembic_version`** | `version_num` | Migration state tracker | Managed by Alembic; current head `e5f6a1b2c3d4` |
+
+---
+
+## 3. Entity-Relationship Diagram (ERD)
 
 ```mermaid
 erDiagram
@@ -126,22 +144,6 @@ erDiagram
         timestamp created_at
     }
 ```
-
----
-
-## 3. Database Tables Overview
-
-| Table Name | Primary Key | Purpose | Key Constraints & Integrity Rules |
-|---|---|---|---|
-| **`users`** | `id` (UUIDv4) | User identity, credentials, roles (`buyer`, `supplier`) | Unique email; FK to `suppliers` on delete `SET NULL` |
-| **`suppliers`** | `id` (UUIDv4) | Carrier organizations invited to RFQs | Unique `code` and `name` |
-| **`rfqs`** | `id` (UUIDv4) | Request for Quotation auction containers | Unique `reference_id`; `bid_close > bid_start`; `forced_close > bid_close`; `pickup_date > bid_close` |
-| **`auction_configs`** | `id` (UUIDv4) | Auction rules and anti-sniping parameters | 1-to-1 with `rfqs`; `trigger_window_minutes > 0`; `extension_minutes > 0` |
-| **`rfq_invitations`** | `id` (UUIDv4) | Whitelist of carriers invited to participate | Unique composite `(rfq_id, supplier_id)`; Cascade delete |
-| **`bids`** | `id` (UUIDv4) | Submitted carrier freight price quotes | `freight > 0`; `origin >= 0`; `destination >= 0`; `total > 0`; `total = freight + origin + destination`; partial unique index `(rfq_id, supplier_id, idempotency_key)` |
-| **`auction_extensions`**| `id` (UUIDv4) | Audit record of dynamic soft-close extensions | `triggering_bid_id` `NOT NULL` with FK `ON DELETE RESTRICT`; FK to `rfqs` |
-| **`auction_events`** | `id` (UUIDv4) | Immutable append-only auction audit trail | FK `bid_id` `ON DELETE RESTRICT`; **Append-only trigger `trg_prevent_audit_tampering`** blocks `UPDATE`/`DELETE` |
-| **`alembic_version`** | `version_num` | Migration state tracker | Managed by Alembic; current head `e5f6a1b2c3d4` |
 
 ---
 

@@ -124,3 +124,4 @@ def downgrade() -> None:
 
     if is_postgres:
         op.drop_constraint('chk_total_equals_components', 'bids', type_='check')
+
