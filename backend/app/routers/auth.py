@@ -34,6 +34,23 @@ def get_me(current_user: User = Depends(get_current_user)):
     return UserOut.model_validate(current_user)
 
 
+@router.post("/ws-ticket")
+def create_ws_ticket(current_user: User = Depends(get_current_user)):
+    """Issues a short-lived (60s) ticket for WebSocket connection auth."""
+    from datetime import timedelta
+    ticket_data = {
+        "sub": current_user.id,
+        "email": current_user.email,
+        "role": current_user.role,
+        "ticket": True,
+    }
+    if current_user.supplier_id:
+        ticket_data["supplier_id"] = current_user.supplier_id
+
+    ticket = create_access_token(data=ticket_data, expires_delta=timedelta(seconds=60))
+    return {"ticket": ticket, "expires_in": 60}
+
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == user_data.email.lower().strip()).first()

@@ -357,6 +357,48 @@ def test_trigger_type_any_rank_change(db_session, buyer_user, suppliers, supplie
     assert rfq.effective_close > bid_close
 
 
+def test_first_bid_on_any_rank_change_does_not_extend(db_session, buyer_user, suppliers, supplier_users):
+    """
+    ANY_RANK_CHANGE is defined as: 'an existing supplier\'s position changed after re-ranking'.
+    The first bid on an auction does NOT qualify because no existing supplier\'s position changed.
+    """
+    bid_start = datetime(2026, 6, 1, 10, 0, 0, tzinfo=timezone.utc)
+    bid_close = datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    forced_close = datetime(2026, 6, 1, 13, 0, 0, tzinfo=timezone.utc)
+    pickup_date = datetime(2026, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
+
+    rfq = create_rfq_helper(
+        db_session,
+        buyer_user,
+        [suppliers[0]],
+        bid_start=bid_start,
+        bid_close=bid_close,
+        forced_close=forced_close,
+        pickup_date=pickup_date,
+        trigger_window_minutes=10,
+        extension_minutes=5,
+        trigger_type=TriggerType.ANY_RANK_CHANGE.value,
+    )
+
+    # First bid placed inside trigger window (11:55 AM)
+    res = process_bid_submission(
+        db=db_session,
+        rfq_id=rfq.id,
+        supplier_id=suppliers[0].id,
+        user_id=supplier_users[0].id,
+        freight_charges=Decimal("2000.00"),
+        origin_charges=Decimal("100.00"),
+        destination_charges=Decimal("100.00"),
+        transit_time_days=10,
+        quote_validity_date=pickup_date,
+        carrier_name="Carrier A",
+        current_time=datetime(2026, 6, 1, 11, 55, 0, tzinfo=timezone.utc),
+    )
+    assert res["extension_applied"] is False
+    db_session.refresh(rfq)
+    assert rfq.effective_close == bid_close
+
+
 # -------------------------------------------------------------
 # Test 4: Extension Clamped at Forced Close and Capped when Reached
 # -------------------------------------------------------------
@@ -542,6 +584,25 @@ def test_bid_validation_rejections(db_session, buyer_user, suppliers, supplier_u
             carrier_name="Carrier A",
             current_time=datetime(2026, 6, 1, 10, 36, 0, tzinfo=timezone.utc),
         )
+
+    # 7. Zero origin and destination charges are permitted when freight > 0
+    rfq5 = make_rfq()
+    res_zero = process_bid_submission(
+        db=db_session,
+        rfq_id=rfq5.id,
+        supplier_id=suppliers[0].id,
+        user_id=supplier_users[0].id,
+        freight_charges=Decimal("2000.00"),
+        origin_charges=Decimal("0.00"),
+        destination_charges=Decimal("0.00"),
+        transit_time_days=10,
+        quote_validity_date=pickup_date,
+        carrier_name="Carrier A",
+        current_time=datetime(2026, 6, 1, 10, 30, 0, tzinfo=timezone.utc),
+    )
+    assert res_zero["bid"].total == Decimal("2000.00")
+    assert res_zero["bid"].origin_charges == Decimal("0.00")
+    assert res_zero["bid"].destination_charges == Decimal("0.00")
 
 
 # -------------------------------------------------------------

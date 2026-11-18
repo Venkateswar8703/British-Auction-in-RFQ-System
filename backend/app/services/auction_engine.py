@@ -193,10 +193,11 @@ def evaluate_qualifying_event(
 ) -> Tuple[bool, str]:
     """
     Qualifying events by trigger_type:
-    1. BID_RECEIVED: any valid bid inside the window qualifies.
-    2. ANY_RANK_CHANGE: qualifies if, after re-ranking, any previously ranked supplier's position changed.
-       A new supplier entering at the bottom, or a supplier lowering their price without changing any positions, does not qualify.
-    3. L1_CHANGE: qualifies only if the identity of the L1 supplier changed. First bid counts as L1 change.
+    1. BID_RECEIVED: any valid bid inside the trigger window qualifies.
+    2. ANY_RANK_CHANGE: an existing supplier's position changed after re-ranking.
+       The first bid and a new bottom entrant do not qualify.
+    3. L1_CHANGE: qualifies only if the identity of the L1 supplier changed.
+       The first bid counts as an L1 change.
     """
     if trigger_type == TriggerType.BID_RECEIVED.value:
         return True, "Valid bid submitted inside trigger window (BID_RECEIVED)"
@@ -209,11 +210,12 @@ def evaluate_qualifying_event(
         return False, "Bid did not change the L1 supplier identity"
 
     if trigger_type == TriggerType.ANY_RANK_CHANGE.value:
+        # Definition: "an existing supplier's position changed after re-ranking"
+        # The first bid and a new bottom entrant do not qualify.
         if is_first_bid or not prev_ranks:
-            # First bid establishes rank 1, but there were no previously ranked suppliers
-            return True, "Initial supplier ranking established"
-        
-        # Check if ANY previously ranked supplier's position changed
+            return False, "First bid on auction does not qualify for ANY_RANK_CHANGE (no existing supplier position changed)"
+
+        # Check if ANY previously ranked existing supplier's position changed
         rank_changed = False
         changed_details = []
         for s_id, old_pos in prev_ranks.items():
@@ -223,8 +225,8 @@ def evaluate_qualifying_event(
                 changed_details.append(f"supplier {s_id}: rank {old_pos} -> {new_pos}")
 
         if rank_changed:
-            return True, f"Supplier ranks shifted: {', '.join(changed_details)}"
-        return False, "No previously ranked supplier's position changed"
+            return True, f"Existing supplier ranks shifted: {', '.join(changed_details)}"
+        return False, "No existing supplier's position changed (new bottom entrant or no shift)"
 
     return False, "Unknown trigger type"
 

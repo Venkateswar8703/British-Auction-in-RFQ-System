@@ -62,13 +62,21 @@ describe('MERIDIAN Client Auction Logic', () => {
       expect(resHigher.errors[0]).toContain('strictly lower');
     });
 
-    it('rejects zero or negative charges', () => {
+    it('allows zero origin and destination charges as long as freight and total > 0', () => {
+      const futureClose = new Date(Date.now() + 3600 * 1000).toISOString();
+      const zeroAncillary = { ...validValues, origin_charges: 0, destination_charges: 0 };
+      const res = validateBidSubmission(zeroAncillary, null, futureClose, Date.now());
+      expect(res.isValid).toBe(true);
+      expect(res.errors).toHaveLength(0);
+    });
+
+    it('rejects negative charges or zero freight charges', () => {
       const futureClose = new Date(Date.now() + 3600 * 1000).toISOString();
       const invalid = { ...validValues, freight_charges: 0, origin_charges: -50 };
       const res = validateBidSubmission(invalid, null, futureClose, Date.now());
       expect(res.isValid).toBe(false);
       expect(res.errors).toContain('Freight charges must be greater than 0');
-      expect(res.errors).toContain('Origin charges must be greater than 0');
+      expect(res.errors).toContain('Origin charges cannot be negative');
     });
 
     it('rejects bid when auction has passed effective close', () => {
@@ -103,11 +111,22 @@ describe('MERIDIAN Client Auction Logic', () => {
   });
 
   describe('calculateClockDrift and formatTimeRemaining', () => {
-    it('correctly calculates network drift between server and client', () => {
+    it('correctly calculates network drift between server and client with zero RTT', () => {
       const serverIso = '2026-11-17T12:00:01.000Z';
       const clientMs = new Date('2026-11-17T12:00:00.000Z').getTime();
-      const drift = calculateClockDrift(serverIso, clientMs);
+      const drift = calculateClockDrift(serverIso, clientMs, 0);
       expect(drift).toBe(1000); // Server is 1 second ahead
+    });
+
+    it('correctly calculates clock drift with simulated 200ms RTT using offset = t_server + RTT/2 - t_client_receive', () => {
+      // Server timestamp: 12:00:00.000
+      const serverIso = '2026-11-17T12:00:00.000Z';
+      // Client receives at 12:00:00.500 (client clock is 500ms ahead of server base)
+      const clientReceiveMs = new Date('2026-11-17T12:00:00.500Z').getTime();
+      const rttMs = 200;
+      // Formula: t_server + RTT/2 - t_client_receive = 0 + 100 - 500 = -400ms
+      const drift = calculateClockDrift(serverIso, clientReceiveMs, rttMs);
+      expect(drift).toBe(-400);
     });
 
     it('formats milliseconds into high precision HH:MM:SS:ms display', () => {

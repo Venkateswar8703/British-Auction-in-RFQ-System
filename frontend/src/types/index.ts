@@ -4,6 +4,8 @@ export type RFQStatus = 'SCHEDULED' | 'ACTIVE' | 'CLOSED' | 'FORCE_CLOSED';
 
 export type TriggerType = 'BID_RECEIVED' | 'ANY_RANK_CHANGE' | 'L1_CHANGE';
 
+export type BidVisibility = 'OPEN' | 'MASKED';
+
 export interface SupplierSimple {
   id: string;
   name: string;
@@ -36,6 +38,7 @@ export interface AuctionConfig {
   trigger_window_minutes: number;
   extension_minutes: number;
   trigger_type: TriggerType;
+  bid_visibility?: BidVisibility;
   min_decrement?: number;
   created_at: string;
 }

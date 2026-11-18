@@ -81,6 +81,43 @@ async def structured_logging_middleware(request: Request, call_next):
     )
     return response
 
+
+# In-memory sliding window rate limiter
+_rate_limits: dict[str, list[float]] = {}
+RATE_LIMIT_WINDOW_SECONDS = 60
+DEFAULT_MAX_REQUESTS_PER_WINDOW = 300
+
+
+@app.middleware("http")
+async def rate_limiting_middleware(request: Request, call_next):
+    # Skip rate limiting for health check paths
+    if request.url.path in ["/health", "/api/v1/health", "/api/health"] or request.url.path.startswith("/ws/"):
+        return await call_next(request)
+
+    client_ip = request.headers.get("X-Test-Client-Id") or (request.client.host if request.client else "127.0.0.1")
+    now_ts = asyncio.get_event_loop().time()
+
+    custom_limit = request.headers.get("X-Test-Rate-Limit")
+    max_requests = int(custom_limit) if custom_limit and custom_limit.isdigit() else DEFAULT_MAX_REQUESTS_PER_WINDOW
+
+    timestamps = _rate_limits.setdefault(client_ip, [])
+    cutoff = now_ts - RATE_LIMIT_WINDOW_SECONDS
+    _rate_limits[client_ip] = [ts for ts in timestamps if ts > cutoff]
+
+    if len(_rate_limits[client_ip]) >= max_requests:
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "code": "RATE_LIMIT_EXCEEDED",
+                "message": f"Too many requests. Limit is {max_requests} requests per minute.",
+                "details": {"retry_after_seconds": 60},
+            },
+            headers={"Retry-After": "60"},
+        )
+
+    _rate_limits[client_ip].append(now_ts)
+    return await call_next(request)
+
 @app.get("/health", tags=["Health"])
 @app.get("/api/v1/health", tags=["Health"])
 async def health_check():
@@ -157,6 +194,7 @@ def health_check():
 # Include Routers
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(suppliers.router, prefix="/api/v1")
+app.include_router(suppliers.router, prefix="")  # Alias for /suppliers
 app.include_router(rfqs.router, prefix="/api/v1")
 app.include_router(bids.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")

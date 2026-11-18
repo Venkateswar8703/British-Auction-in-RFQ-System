@@ -42,7 +42,7 @@ In global freight procurement, standard static sealed bids or fixed-deadline rev
 | **Alembic Migrations** | `backend/alembic/versions/` | Production-ready SQL schema migrations |
 | **Backend Engine & APIs** | `backend/app/` | FastAPI, SQLAlchemy 2.x, Pydantic v2, WebSockets, background daemon |
 | **Frontend Application** | `frontend/` | React 18, TypeScript, Tailwind CSS, Framer Motion, IBM Plex Mono typography |
-| **Automated Test Suites** | `backend/tests/` & `frontend/src/tests/` | 15 backend pytest tests (92% engine coverage) + 19 frontend Vitest tests (All Passing) |
+| **Automated Test Suites** | `backend/tests/` & `frontend/src/tests/` | 21 backend pytest tests (93% engine coverage) + 21 frontend Vitest tests (All Passing) |
 | **Live Verification Suite** | `scripts/verify_live_scenarios.py` | 10 authoritative live API scenarios verified against running server |
 | **Docker Infrastructure** | `docker-compose.yml`, `Dockerfile.*` | Multi-container setup (PostgreSQL 16, FastAPI backend, Nginx frontend) |
 | **Makefile Automation** | `Makefile` | One-command targets (`make dev`, `make test`, `make seed`, `make demo`, `make verify`) |
@@ -113,7 +113,7 @@ A complete `Makefile` is provided at the repository root for one-command operati
 
 ```bash
 make dev      # Starts both backend (port 8000) and frontend (port 5173)
-make test     # Runs full backend pytest (92% engine coverage) and frontend Vitest suites
+make test     # Runs full backend pytest (93% engine coverage) and frontend Vitest suites
 make seed     # Reseeds database relative to now() with Scheduled, Active, Closed & Force Closed RFQs
 make demo     # Resets the signature live demo auction into its trigger window
 make verify   # Executes the 10 authoritative live API verification scenarios
@@ -192,6 +192,34 @@ The application features a **One-Click Fast Persona Switcher** on the Login page
 | **Supplier** | COSCO Shipping | `commercial@cosco.com` | `SupplierPass2026!` | Global Shipping Operator |
 | **Supplier** | ONE Ocean Network Express | `rates@one-line.com` | `SupplierPass2026!` | Container Carrier |
 | **Supplier** | Kuehne+Nagel Intermodal | `freight@kuehne-nagel.com` | `SupplierPass2026!` | Freight Forwarder |
+
+---
+
+## Application Screens & Portals
+
+MERIDIAN delivers an enterprise editorial procurement product with dedicated interfaces for both buyers and suppliers:
+
+1. **Buyer Command Center** (`/dashboard` or `/`):
+   - Aggregated KPIs: total RFQs, active, scheduled, closed, and forced-closed counts.
+   - Live price yield & performance charts tracking savings across concluded freight corridors.
+   - Active auctions radar showing real-time countdown badges and quick-access control links.
+2. **Auction Listing Console** (`/auctions`):
+   - Full tabular view of all RFQs with status filters, search by title/port/carrier, and route UN/LOCODEs (`SGSIN → AUMEL`).
+   - Live closing countdowns, sticky headers, and action buttons for viewing or managing auctions.
+3. **Create & Edit RFQ Console** (`/auctions/new`, `/auctions/:rfqId/edit`):
+   - Definition of origin, destination, pickup dates, and strictly validated timelines (`bid_start < bid_close < forced_close < pickup`).
+   - Dynamic extension configuration: trigger window ($X$), extension duration ($Y$), trigger event type (`BID_RECEIVED`, `ANY_RANK_CHANGE`, `L1_CHANGE`).
+   - Bid visibility selector: **`OPEN`** (transparent ladder) vs **`MASKED`** (blind bidding, rival quotes redacted).
+   - Supplier invitation whitelist manager (locked once auction is active).
+4. **Live Auction Control Room** (`/auctions/:rfqId`):
+   - Signature 3-zone layout:
+     - **Zone 1 (Left)**: Shipment specifications, container details, pickup dates, and submitted quote overview.
+     - **Zone 2 (Center)**: Dark focal instrument panels featuring millisecond-synchronized live countdown hero, current L1 lowest bid, effective and forced close timestamps, and real-time bid submission console with preset underbid shortcuts.
+     - **Zone 3 (Right)**: Live rank ladder (L1 → Ln) with rank-shift animations, masked rival handling, and chronological activity feed.
+5. **Supplier Portal** (`/supplier`):
+   - Dedicated dashboard for carrier commercial representatives.
+   - Live participation metrics: invited auctions count, active bids placed, leading contracts (L1), and RFQ deadlines.
+   - Direct bid submission actions and status tracking for invited routes.
 
 ---
 
@@ -309,18 +337,24 @@ if qualifies:
 
 Both the backend and frontend have comprehensive automated test suites:
 
-### Backend pytest Suite (15 Tests)
+### Backend pytest Suite (21 Tests — 93% Engine Coverage)
 Run from root:
 ```bash
 .venv/bin/pytest backend/tests/ -v
 ```
 - `test_auth_and_profile_flow`: JWT issuance, profile retrieval, buyer & supplier RBAC.
 - `test_rfq_creation_and_role_access`: Timing validation (`forced_close > bid_close > bid_start`), carrier access restrictions.
+- `test_endpoints_rfq_patch_invitations_and_suppliers`: `PATCH/PUT /rfqs/{id}` (locked once started), `POST/DELETE /rfqs/{id}/invitations`, `GET /suppliers`.
+- `test_bid_visibility_masked_payloads`: Redaction of rival supplier names and quotes in `MASKED` mode; unmasked for buyers.
+- `test_ws_ticket_and_first_message_auth`: Short-lived tickets (`POST /api/v1/auth/ws-ticket`, 60s) and first-message WebSocket auth.
+- `test_rate_limiting_returns_429`: Sliding window rate limiter returning HTTP 429 `RATE_LIMIT_EXCEEDED` on rapid bursts.
+- `test_cors_headers_and_jwt_expiry`: CORS allow-origin response and 401 on expired tokens.
 - `test_example_scenario_close_extension`: The PDF benchmark scenario (6:00 PM close, X=10, Y=5, 6:30 PM forced close, bid at 5:55 -> 6:05 PM, bid at 6:03 -> 6:08 PM).
 - `test_trigger_type_l1_change`: Verifies that non-L1 bids do not extend when trigger is `L1_CHANGE`.
 - `test_trigger_type_any_rank_change`: Verifies rank change criteria (bottom entrants do not trigger; swapping L2/L3 triggers).
+- `test_first_bid_on_any_rank_change_does_not_extend`: Verifies first bid on auction does not trigger `ANY_RANK_CHANGE` extension.
 - `test_extension_clamped_and_capped`: Clamping to `forced_close` and emission of `EXTENSION_CAPPED`.
-- `test_bid_validation_rejections`: Tests `BID_NOT_LOWER`, negative charges, past deadlines, and uninvited carriers.
+- `test_bid_validation_rejections`: Tests `BID_NOT_LOWER`, negative charges, zero ancillaries, past deadlines, and uninvited carriers.
 - `test_ranking_and_tie_breaking`: Ties broken by earlier timestamp.
 - `test_idempotency_key_replay`: Deduplication via `Idempotency-Key`.
 - `test_status_transitions`: Transitions to `CLOSED` vs `FORCE_CLOSED`.
@@ -330,16 +364,17 @@ Run from root:
 - `test_configurable_min_decrement_enforcement`: Rejection of bids failing to meet `min_decrement`.
 - `test_auction_events_tamper_proof_trigger`: Trigger blocking UPDATE/DELETE on `auction_events`.
 
-### Frontend Vitest Suite (17 Tests)
+### Frontend Vitest Suite (21 Tests)
 Run from `frontend/`:
 ```bash
 cd frontend && npm test
 ```
 - `calculateBidTotal`: Precision summation of freight, origin, and destination charges.
-- `validateBidSubmission`: Strict downward price verification against supplier's previous quote.
+- `validateBidSubmission`: Strict downward price verification against supplier's previous quote, allowing zero origin/destination ancillaries.
 - `isInsideTriggerWindow`: Boundary testing for $[effective\_close - X, effective\_close)$.
-- `calculateClockDrift` & `formatTimeRemaining`: Millisecond countdown formatting, urgency flags (<5m), and network drift compensation ($\Delta = t_{server} - t_{client}$).
+- `calculateClockDrift` & `formatTimeRemaining`: Millisecond countdown formatting, urgency flags (<5m), and network drift compensation using $\text{offset} = t_{\text{server}} + \frac{RTT}{2} - t_{\text{client\_receive}}$ (verified with simulated 200ms RTT).
 - `rankBids`: L1 ascending sort, latest quote filtering, and timestamp tie-breaking.
+- `extractLocode` & `formatDateDisplay`: UN/LOCODE parsing and UTC formatting.
 
 ---
 

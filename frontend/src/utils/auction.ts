@@ -49,11 +49,11 @@ export function validateBidSubmission(
   if (values.freight_charges <= 0) {
     errors.push('Freight charges must be greater than 0');
   }
-  if (values.origin_charges <= 0) {
-    errors.push('Origin charges must be greater than 0');
+  if (values.origin_charges < 0) {
+    errors.push('Origin charges cannot be negative');
   }
-  if (values.destination_charges <= 0) {
-    errors.push('Destination charges must be greater than 0');
+  if (values.destination_charges < 0) {
+    errors.push('Destination charges cannot be negative');
   }
   if (values.transit_time_days <= 0) {
     errors.push('Transit time must be at least 1 day');
@@ -67,6 +67,10 @@ export function validateBidSubmission(
     values.origin_charges,
     values.destination_charges
   );
+
+  if (total <= 0) {
+    errors.push('Total bid amount must be greater than 0');
+  }
 
   // British Auction rule: New bid must be strictly lower than supplier's previous best
   if (previousBestTotal !== null && total >= previousBestTotal) {
@@ -101,14 +105,16 @@ export function isInsideTriggerWindow(
 }
 
 /**
- * Computes network clock drift: drift = serverTime - clientReceiveTime
+ * Computes network clock drift offset:
+ * offset = t_server + RTT/2 - t_client_receive
  */
 export function calculateClockDrift(
   serverTimeIso: string,
-  clientReceiveTimeMs: number = Date.now()
+  clientReceiveTimeMs: number = Date.now(),
+  rttMs: number = 0
 ): number {
   const serverMs = new Date(serverTimeIso).getTime();
-  return serverMs - clientReceiveTimeMs;
+  return serverMs + (rttMs / 2) - clientReceiveTimeMs;
 }
 
 /**

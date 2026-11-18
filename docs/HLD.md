@@ -91,8 +91,17 @@ flowchart TB
   3. *Zone 3 (Right)*: Live supplier rank ladder (L1, L2, L3...) with change animations, supplier's personal bid audit log, and real-time activity feed.
 - **Synchronized Clock & Drift Compensation**:
   - The client records server timestamps provided on connection and on every WebSocket broadcast.
-  - Formula: $\Delta = t_{\text{server}} - t_{\text{client\_receive}} - \frac{RTT}{2}$.
-  - Millisecond countdown tick evaluates against $t_{\text{now}} + \Delta$ to guarantee exact alignment with server cutoff time.
+  - Formula: $\text{offset} = t_{\text{server}} + \frac{RTT}{2} - t_{\text{client\_receive}}$.
+  - Millisecond countdown tick evaluates against $t_{\text{now}} + \text{offset}$ to guarantee exact alignment with server cutoff time.
+- **Bid Visibility Control**:
+  - `OPEN` (default): Transparent pricing where invited carriers see all supplier names, ranks, and submitted bid amounts in the ladder and activity stream.
+  - `MASKED`: Blind competitive bidding where suppliers only see their own quote, their own rank, and the authoritative L1 price. Rival quotes, rival supplier identities, and rival charge breakdowns are masked and redacted server-side in REST and WebSocket payloads.
+- **Qualifying Event Triggers**:
+  - `BID_RECEIVED`: Any valid bid inside the trigger window $[effective\_close - X, effective\_close)$ triggers an extension of $Y$ minutes.
+  - `ANY_RANK_CHANGE`: Defined as "an existing supplier's position changed after re-ranking". The first bid on an auction and a new entrant at the bottom do not qualify.
+  - `L1_CHANGE`: Qualifies only if the identity of the L1 supplier changed. The first bid establishes L1 and qualifies.
+- **Component Charges Rules**:
+  - Freight charges $> 0$, origin charges $\ge 0$, destination charges $\ge 0$, and total bid amount $> 0$. Enforced at database level via PostgreSQL CHECK constraints, Pydantic validation, and frontend pre-submission checks.
 
 ---
 

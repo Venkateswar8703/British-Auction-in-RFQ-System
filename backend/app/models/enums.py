@@ -19,6 +19,11 @@ class TriggerType(str, enum.Enum):
     L1_CHANGE = "L1_CHANGE"
 
 
+class BidVisibility(str, enum.Enum):
+    OPEN = "OPEN"
+    MASKED = "MASKED"
+
+
 class InvitationStatus(str, enum.Enum):
     INVITED = "INVITED"
     ACCEPTED = "ACCEPTED"

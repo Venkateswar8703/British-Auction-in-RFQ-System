@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
-import { Supplier, TriggerType } from '../types';
+import { Supplier, TriggerType, BidVisibility } from '../types';
 import { ArrowLeft, Save, AlertCircle } from 'lucide-react';
 import { addHours, addDays, format } from 'date-fns';
 
@@ -26,6 +26,7 @@ export const CreateEditRfq: React.FC = () => {
   const [triggerWindowMinutes, setTriggerWindowMinutes] = useState<number>(10);
   const [extensionMinutes, setExtensionMinutes] = useState<number>(5);
   const [triggerType, setTriggerType] = useState<TriggerType>('L1_CHANGE');
+  const [bidVisibility, setBidVisibility] = useState<BidVisibility>('OPEN');
   const [minDecrement, setMinDecrement] = useState<string>('0');
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -59,6 +60,9 @@ export const CreateEditRfq: React.FC = () => {
             setTriggerWindowMinutes(rfq.config.trigger_window_minutes);
             setExtensionMinutes(rfq.config.extension_minutes);
             setTriggerType(rfq.config.trigger_type);
+            if (rfq.config.bid_visibility) {
+              setBidVisibility(rfq.config.bid_visibility);
+            }
           }
           if (rfq.invitations) {
             setInvitedSupplierIds(rfq.invitations.map((i) => i.supplier_id));
@@ -136,6 +140,7 @@ export const CreateEditRfq: React.FC = () => {
       trigger_window_minutes: Number(triggerWindowMinutes),
       extension_minutes: Number(extensionMinutes),
       trigger_type: triggerType,
+      bid_visibility: bidVisibility,
       min_decrement: Number(minDecrement) || 0,
       invited_supplier_ids: invitedSupplierIds,
     };
@@ -426,6 +431,23 @@ export const CreateEditRfq: React.FC = () => {
                   <option value="ANY_RANK_CHANGE">ANY_RANK_CHANGE (Any Rank Shifts)</option>
                   <option value="BID_RECEIVED">BID_RECEIVED (Any Bid In Window)</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-mono uppercase tracking-[0.08em] text-meridian-muted block mb-1">
+                  Bid Visibility *
+                </label>
+                <select
+                  value={bidVisibility}
+                  onChange={(e) => setBidVisibility(e.target.value as BidVisibility)}
+                  className="w-full bg-meridian-surface border border-meridian-line p-2 text-xs font-mono font-bold text-meridian-ink focus:border-meridian-ink outline-none mt-1"
+                >
+                  <option value="OPEN">OPEN (Transparent: All Names & Amounts)</option>
+                  <option value="MASKED">MASKED (Blind: Own Rank, Own Bid & L1 Price)</option>
+                </select>
+                <span className="text-[10px] text-meridian-muted font-mono mt-1 block">
+                  Suppliers only see own rank + L1 in MASKED
+                </span>
               </div>
 
               <div>

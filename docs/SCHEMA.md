@@ -169,6 +169,7 @@ British auction timing and trigger configuration.
 - `trigger_window_minutes`: INTEGER, Not Null (X). `CHECK (trigger_window_minutes > 0)`.
 - `extension_minutes`: INTEGER, Not Null (Y). `CHECK (extension_minutes > 0)`.
 - `trigger_type`: VARCHAR(30), Not Null. Enum: `'BID_RECEIVED'`, `'ANY_RANK_CHANGE'`, `'L1_CHANGE'`.
+- `bid_visibility`: VARCHAR(20), Not Null, Default `'OPEN'`. Enum: `'OPEN'`, `'MASKED'`.
 - `min_decrement`: NUMERIC(12, 2), Nullable, Default `0.00`. Optional minimum price decrement required below the supplier's previous bid. `CHECK (min_decrement >= 0)`.
 
 ### 2.5 `rfq_invitations`
@@ -186,8 +187,8 @@ Immutable record of all bids submitted.
 - `supplier_id`: UUID, Foreign Key to `suppliers.id` ON DELETE CASCADE.
 - `submitted_by`: UUID, Foreign Key to `users.id`.
 - `freight_charges`: NUMERIC(12, 2), Not Null. `CHECK (freight_charges > 0)`.
-- `origin_charges`: NUMERIC(12, 2), Not Null. `CHECK (origin_charges > 0)`.
-- `destination_charges`: NUMERIC(12, 2), Not Null. `CHECK (destination_charges > 0)`.
+- `origin_charges`: NUMERIC(12, 2), Not Null. `CHECK (origin_charges >= 0)`.
+- `destination_charges`: NUMERIC(12, 2), Not Null. `CHECK (destination_charges >= 0)`.
 - `total`: NUMERIC(12, 2), Not Null. `CHECK (total > 0)`.
 - `transit_time_days`: INTEGER, Not Null. `CHECK (transit_time_days > 0)`.
 - `quote_validity_date`: TIMESTAMPTZ, Not Null.
@@ -224,7 +225,7 @@ Append-only chronological audit log of all auction events.
   - `CREATE INDEX idx_auction_events_rfq_created ON auction_events(rfq_id, created_at);`
   - `CREATE INDEX idx_rfqs_status_effective ON rfqs(status, effective_close);`
 - **Tamper-Proof Trigger**:
-  - `trg_prevent_audit_tampering` prevents any `UPDATE` or `DELETE` operations on this table, raising an uncatchable server-level exception `auction_events is append-only and cannot be modified or deleted`. Guaranteed immutable audit trail.
+  - `trg_prevent_audit_tampering` prevents any `UPDATE` or `DELETE` operations on this table, rejected at the database level with exception `Audit trail is append-only. UPDATE and DELETE operations are strictly prohibited on auction_events.`. Guaranteed immutable audit trail.
 
 ---
 

@@ -91,6 +91,7 @@ def submit_bid(
             "rank": supplier_rank,
             "effective_close": rfq.effective_close.isoformat(),
             "forced_close": rfq.forced_close.isoformat(),
+            "bid_visibility": getattr(rfq.config, "bid_visibility", "OPEN") if rfq.config else "OPEN",
             "extension_applied": result["extension_applied"],
             "extension_capped": result["extension_capped"],
             "rankings": [
@@ -141,12 +142,25 @@ def list_bids_for_rfq(
             detail={"code": "RFQ_NOT_FOUND", "message": "RFQ not found"},
         )
 
-    bids_query = (
-        db.query(Bid)
-        .filter(Bid.rfq_id == rfq.id)
-        .order_by(Bid.created_at.desc())
-        .all()
-    )
+    # If masked mode and user is supplier, only show their own bids
+    if (
+        current_user.role == UserRole.SUPPLIER.value
+        and rfq.config
+        and getattr(rfq.config, "bid_visibility", "OPEN") == "MASKED"
+    ):
+        bids_query = (
+            db.query(Bid)
+            .filter(Bid.rfq_id == rfq.id, Bid.supplier_id == current_user.supplier_id)
+            .order_by(Bid.created_at.desc())
+            .all()
+        )
+    else:
+        bids_query = (
+            db.query(Bid)
+            .filter(Bid.rfq_id == rfq.id)
+            .order_by(Bid.created_at.desc())
+            .all()
+        )
 
     rankings = calculate_rankings(db, rfq.id)
     rank_map = {r["supplier_id"]: r["rank"] for r in rankings}

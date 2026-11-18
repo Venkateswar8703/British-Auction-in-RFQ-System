@@ -21,7 +21,7 @@ dev:
 test: test-backend test-frontend
 
 test-backend:
-	PYTHONPATH=backend .venv/bin/pytest --cov=app.services.auction_engine --cov-report=term-missing backend/tests
+	PYTHONPATH=backend DATABASE_URL="$${DATABASE_URL:-postgresql://meridian:meridian_secret@127.0.0.1:5432/meridian_test_db}" .venv/bin/pytest --cov=app.services.auction_engine --cov-report=term-missing backend/tests
 
 test-frontend:
 	cd frontend && npm test

@@ -5,7 +5,7 @@ os.environ["TESTING"] = "1"
 import pytest
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -49,8 +49,12 @@ def db_session(db_engine):
     session.close()
     with db_engine.connect() as conn:
         with conn.begin():
+            if db_engine.dialect.name.startswith("postgresql"):
+                conn.execute(text("ALTER TABLE auction_events DISABLE TRIGGER ALL;"))
             for table in reversed(Base.metadata.sorted_tables):
                 conn.execute(table.delete())
+            if db_engine.dialect.name.startswith("postgresql"):
+                conn.execute(text("ALTER TABLE auction_events ENABLE TRIGGER ALL;"))
 
 
 @pytest.fixture

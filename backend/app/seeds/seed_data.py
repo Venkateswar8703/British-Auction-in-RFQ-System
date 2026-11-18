@@ -48,6 +48,24 @@ def seed_database(reset: bool = True):
             # Drop and recreate all tables for a clean slate
             Base.metadata.drop_all(bind=engine)
             Base.metadata.create_all(bind=engine)
+            if engine.dialect.name.startswith("postgresql"):
+                from sqlalchemy import text
+                with engine.connect() as conn:
+                    with conn.begin():
+                        conn.execute(text("""
+                            CREATE OR REPLACE FUNCTION prevent_audit_tampering()
+                            RETURNS TRIGGER AS $$
+                            BEGIN
+                                RAISE EXCEPTION 'Audit trail is append-only. UPDATE and DELETE operations are strictly prohibited on auction_events.';
+                            END;
+                            $$ LANGUAGE plpgsql;
+
+                            DROP TRIGGER IF EXISTS trg_prevent_audit_tampering ON auction_events;
+                            CREATE TRIGGER trg_prevent_audit_tampering
+                            BEFORE UPDATE OR DELETE ON auction_events
+                            FOR EACH ROW
+                            EXECUTE FUNCTION prevent_audit_tampering();
+                        """))
 
         # 1. Create Buyers
         buyers = [

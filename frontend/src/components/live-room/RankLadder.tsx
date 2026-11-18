@@ -83,16 +83,22 @@ export const RankLadder: React.FC<RankLadderProps> = ({
                 {/* Right: Total Price & Delta */}
                 <div className="text-right">
                   <div className={`font-bold tabular-nums text-sm text-meridian-ink`}>
-                    ${Number(r.total).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    {r.total != null
+                      ? `$${Number(r.total).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                      : '<MASKED>'}
                   </div>
                   <div className="text-[10px] tabular-nums mt-0.5">
                     {isL1 ? (
                       <span className="text-meridian-ink font-bold uppercase tracking-wider text-[9px]">
                         ★ LEADING
                       </span>
-                    ) : (
+                    ) : r.total != null && l1Price > 0 ? (
                       <span className="text-meridian-muted font-medium">
                         +${priceDiff.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    ) : (
+                      <span className="text-meridian-muted text-[10px]">
+                        Rank {r.rank}
                       </span>
                     )}
                   </div>

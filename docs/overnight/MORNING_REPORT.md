@@ -50,20 +50,20 @@
    - *Fix*: Implemented 1500ms auto-reconnect with exponential backoff and `RECONNECTED` event triggering full RFQ state reload.
 9. **Audit Trail Mutability**:
    - *Bug*: `auction_events` could theoretically be modified or deleted by privileged database users.
-   - *Fix*: Installed PostgreSQL trigger `trg_prevent_audit_tampering` raising an uncatchable exception on `UPDATE` or `DELETE`.
+   - *Fix*: Installed PostgreSQL trigger `trg_prevent_audit_tampering` rejected at the database level on `UPDATE` or `DELETE`.
 
 ---
 
 ## 3. Test Counts & Coverage Summary
 
-- **Backend Pytest Suite**: **15 / 15 Passed (100%)**
-  - Execution Time: ~42 seconds
-  - Engine Test Coverage (`auction_engine.py`): **90%** (181 statements, 18 missed)
+- **Backend Pytest Suite**: **21 / 21 Passed (100%)**
+  - Execution Time: ~53 seconds
+  - Engine Test Coverage (`auction_engine.py`): **93%** (181 statements, 13 missed)
   - Database: Native PostgreSQL 16 (`meridian_test_db`)
-- **Frontend Vitest Suite**: **19 / 19 Passed (100%)**
-  - Execution Time: 1.50 seconds
-  - Test Suite: Client validation, downward bidding rules, trigger windows, timestamp tie-breaking, drift compensation.
-- **Frontend Production Build**: **Zero Errors / Zero Warnings** (Vite + TypeScript compiled in 7.70s).
+- **Frontend Vitest Suite**: **21 / 21 Passed (100%)**
+  - Execution Time: 1.80 seconds
+  - Test Suite: Client validation, downward bidding rules, trigger windows, timestamp tie-breaking, drift compensation ($\text{offset} = t_{\text{server}} + \frac{RTT}{2} - t_{\text{client\_receive}}$).
+- **Frontend Production Build**: **Zero Errors / Zero Warnings** (Vite + TypeScript compiled in 7.07s).
 - **Authoritative Live API Scenarios**: **10 / 10 Passed (100%)** via `scripts/verify_live_scenarios.py`.
 
 ---

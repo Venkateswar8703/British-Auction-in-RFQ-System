@@ -18,7 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import relationship
 from app.database import Base
-from app.models.enums import UserRole, RFQStatus, TriggerType, InvitationStatus, AuctionEventType
+from app.models.enums import UserRole, RFQStatus, TriggerType, BidVisibility, InvitationStatus, AuctionEventType
 
 
 class TZDateTime(TypeDecorator):
@@ -124,6 +124,7 @@ class AuctionConfig(Base):
     trigger_window_minutes = Column(Integer, nullable=False, default=10)
     extension_minutes = Column(Integer, nullable=False, default=5)
     trigger_type = Column(String(30), nullable=False, default=TriggerType.L1_CHANGE.value)
+    bid_visibility = Column(String(20), nullable=False, default=BidVisibility.OPEN.value)
     min_decrement = Column(Numeric(12, 2), nullable=True, default=Decimal("0.00"))
     created_at = Column(TZDateTime, default=utc_now, nullable=False)
     updated_at = Column(TZDateTime, default=utc_now, onupdate=utc_now, nullable=False)
@@ -174,8 +175,8 @@ class Bid(Base):
 
     __table_args__ = (
         CheckConstraint("freight_charges > 0", name="chk_freight_pos"),
-        CheckConstraint("origin_charges > 0", name="chk_origin_pos"),
-        CheckConstraint("destination_charges > 0", name="chk_destination_pos"),
+        CheckConstraint("origin_charges >= 0", name="chk_origin_non_neg"),
+        CheckConstraint("destination_charges >= 0", name="chk_destination_non_neg"),
         CheckConstraint("total > 0", name="chk_total_pos"),
         CheckConstraint("transit_time_days > 0", name="chk_transit_pos"),
         Index("idx_bids_rfq_created", "rfq_id", "created_at"),

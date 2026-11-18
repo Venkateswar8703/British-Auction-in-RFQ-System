@@ -6,8 +6,8 @@ from decimal import Decimal
 
 class BidCreate(BaseModel):
     freight_charges: Decimal = Field(..., gt=0, description="Freight charges (USD)")
-    origin_charges: Decimal = Field(..., gt=0, description="Origin charges (USD)")
-    destination_charges: Decimal = Field(..., gt=0, description="Destination charges (USD)")
+    origin_charges: Decimal = Field(..., ge=0, description="Origin charges (USD)")
+    destination_charges: Decimal = Field(..., ge=0, description="Destination charges (USD)")
     transit_time_days: int = Field(..., gt=0, description="Transit time in days")
     quote_validity_date: datetime = Field(..., description="Date until which quote is valid")
     carrier_name: str = Field(..., min_length=1, max_length=255, description="Operating carrier name")
@@ -41,15 +41,15 @@ class SupplierRankOut(BaseModel):
     supplier_id: str
     supplier_name: str
     supplier_code: str
-    total: Decimal
-    freight_charges: Decimal
-    origin_charges: Decimal
-    destination_charges: Decimal
-    transit_time_days: int
-    quote_validity_date: datetime
-    carrier_name: str
-    bid_id: str
-    bid_created_at: datetime
+    total: Optional[Decimal] = None
+    freight_charges: Optional[Decimal] = None
+    origin_charges: Optional[Decimal] = None
+    destination_charges: Optional[Decimal] = None
+    transit_time_days: Optional[int] = None
+    quote_validity_date: Optional[datetime] = None
+    carrier_name: Optional[str] = None
+    bid_id: Optional[str] = None
+    bid_created_at: Optional[datetime] = None
     is_current_user_supplier: bool = False
 
     model_config = ConfigDict(from_attributes=True)

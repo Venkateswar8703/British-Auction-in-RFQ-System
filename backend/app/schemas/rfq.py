@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, model_validator, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
-from app.models.enums import RFQStatus, TriggerType, InvitationStatus
+from app.models.enums import RFQStatus, TriggerType, BidVisibility, InvitationStatus
 from app.schemas.supplier import SupplierSimpleOut
 from app.schemas.bid import SupplierRankOut, BidOut
 
@@ -11,6 +11,7 @@ class AuctionConfigBase(BaseModel):
     trigger_window_minutes: int = Field(default=10, gt=0, description="X: Trigger window in minutes")
     extension_minutes: int = Field(default=5, gt=0, description="Y: Extension duration in minutes")
     trigger_type: TriggerType = Field(default=TriggerType.L1_CHANGE)
+    bid_visibility: BidVisibility = Field(default=BidVisibility.OPEN, description="Bid visibility: OPEN or MASKED")
     min_decrement: Optional[Decimal] = Field(default=Decimal("0.00"), ge=0, description="Optional minimum bid decrement")
 
 
@@ -60,6 +61,7 @@ class RFQCreate(BaseModel):
     trigger_window_minutes: int = Field(default=10, gt=0)
     extension_minutes: int = Field(default=5, gt=0)
     trigger_type: TriggerType = Field(default=TriggerType.L1_CHANGE)
+    bid_visibility: Optional[BidVisibility] = Field(default=BidVisibility.OPEN)
     min_decrement: Optional[Decimal] = Field(default=Decimal("0.00"), ge=0)
     invited_supplier_ids: List[str] = Field(default_factory=list)
 
@@ -86,6 +88,7 @@ class RFQUpdate(BaseModel):
     trigger_window_minutes: Optional[int] = Field(None, gt=0)
     extension_minutes: Optional[int] = Field(None, gt=0)
     trigger_type: Optional[TriggerType] = None
+    bid_visibility: Optional[BidVisibility] = None
     invited_supplier_ids: Optional[List[str]] = None
 
 

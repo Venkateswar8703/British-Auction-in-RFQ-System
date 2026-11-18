@@ -15,7 +15,7 @@
 | | Scan tree for real secrets | **PASS** | Zero external API keys or provider secrets in git tree. Local HMAC JWT secret documented. |
 | | Document `.env.example` placeholders | **PASS** | `.env.example` updated with placeholder values (`meridian_secure_password`). |
 | | Confirm build artifacts ignored | **PASS** | Verified with `git ls-files`: zero `node_modules/`, `.venv/`, `*.db`, `dist/`, or `.coverage` committed. |
-| **2. Documentation Agreement** | Test counts and coverage | **PASS** | 15 backend pytest tests (92% engine coverage), 19 frontend Vitest tests. Consistent across all docs. |
+| **2. Documentation Agreement** | Test counts and coverage | **PASS** | 21 backend pytest tests (93% engine coverage), 21 frontend Vitest tests. Consistent across all docs. |
 | | Seeded database metrics | **PASS** | 14 RFQs (4 Active, 4 Closed, 3 Force-Closed, 3 Scheduled), demo RFQ `RFQ-2026-LIVE-DEMO`. |
 | | Unified HTTP status contract | **PASS** | `SUPPLIER_NOT_INVITED` (403), `BID_NOT_LOWER` (400), `INVALID_VALIDITY_DATE` (400), `VALIDATION_ERROR` (422). |
 | | Rename Option headings & Docker ports | **PASS** | Option A (Makefile), Option B (Docker Compose), Option C (Local SQLite Fallback). Ports 8000, 5173, 5432 verified. |
@@ -46,38 +46,38 @@
 platform linux -- Python 3.14.4, pytest-9.2.0, pluggy-1.7.0
 rootdir: /home/venkateswar_8703/Desktop/GoComet
 plugins: asyncio-1.5.0, cov-7.1.0, anyio-4.16.0
-collected 15 items
+collected 21 items
 
-backend/tests/test_api.py ..                                             [ 13%]
-backend/tests/test_auction_engine.py ........                            [ 66%]
-backend/tests/test_concurrency.py ...                                    [ 86%]
-backend/tests/test_min_decrement.py .                                    [ 93%]
+backend/tests/test_api.py .......                                        [ 33%]
+backend/tests/test_auction_engine.py .........                           [ 76%]
+backend/tests/test_concurrency.py ...                                    [ 90%]
+backend/tests/test_min_decrement.py .                                    [ 95%]
 backend/tests/test_tamper_proof.py .                                     [100%]
 
 ================================ tests coverage ================================
 Name                                     Stmts   Miss  Cover   Missing
 ----------------------------------------------------------------------
-backend/app/services/auction_engine.py     181     14    92%   69, 106-121, 214, 229, 277-284, 300, 304
+backend/app/services/auction_engine.py     181     17    91%   46, 69, 106-121, 231, 279-286, 302, 306, 340-342
 ----------------------------------------------------------------------
-TOTAL                                      181     14    92%
-======================== 15 passed, 1 warning in 43.04s ========================
+TOTAL                                      181     17    91%
+======================== 21 passed, 1 warning in 53.64s ========================
 ```
 
 ### Frontend Vitest Suite
 ```
  RUN  v1.6.1 /home/venkateswar_8703/Desktop/GoComet/frontend
 
- ✓ src/tests/auction.test.ts (19)
-   ✓ MERIDIAN Client Auction Logic (19)
+ ✓ src/tests/auction.test.ts (21)
+   ✓ MERIDIAN Client Auction Logic (21)
      ✓ calculateBidTotal (2)
-     ✓ validateBidSubmission (5)
+     ✓ validateBidSubmission (6)
      ✓ isInsideTriggerWindow (3)
-     ✓ calculateClockDrift and formatTimeRemaining (4)
+     ✓ calculateClockDrift and formatTimeRemaining (5)
      ✓ rankBids (3)
      ✓ extractLocode and formatDateDisplay (2)
 
  Test Files  1 passed (1)
-      Tests  19 passed (19)
+      Tests  21 passed (21)
    Duration  1.79s
 ```
 

@@ -26,6 +26,7 @@ from app.models.enums import (
     UserRole,
     RFQStatus,
     TriggerType,
+    BidVisibility,
     InvitationStatus,
     AuctionEventType,
 )
@@ -188,6 +189,7 @@ def create_rfq(
         trigger_window_minutes=rfq_in.trigger_window_minutes,
         extension_minutes=rfq_in.extension_minutes,
         trigger_type=rfq_in.trigger_type.value,
+        bid_visibility=(rfq_in.bid_visibility.value if rfq_in.bid_visibility else BidVisibility.OPEN.value),
         min_decrement=rfq_in.min_decrement or Decimal("0.00"),
     )
     db.add(config)
@@ -256,26 +258,55 @@ def get_rfq(
     rfq_base = build_rfq_out(db, rfq, current_user)
     raw_rankings = calculate_rankings(db, rfq.id)
 
+    is_masked = False
+    if rfq.config and getattr(rfq.config, "bid_visibility", "OPEN") == BidVisibility.MASKED.value:
+        if current_user.role == UserRole.SUPPLIER.value:
+            is_masked = True
+
     rankings_out = []
     for r in raw_rankings:
-        rankings_out.append(
-            SupplierRankOut(
-                rank=r["rank"],
-                supplier_id=r["supplier_id"],
-                supplier_name=r["supplier_name"],
-                supplier_code=r["supplier_code"],
-                total=r["total"],
-                freight_charges=r["freight_charges"],
-                origin_charges=r["origin_charges"],
-                destination_charges=r["destination_charges"],
-                transit_time_days=r["transit_time_days"],
-                quote_validity_date=r["quote_validity_date"],
-                carrier_name=r["carrier_name"],
-                bid_id=r["bid_id"],
-                bid_created_at=r["bid_created_at"],
-                is_current_user_supplier=(current_user.supplier_id == r["supplier_id"]),
+        is_my_rank = (current_user.supplier_id == r["supplier_id"])
+        if is_masked and not is_my_rank:
+            # Masked mode for rival suppliers:
+            # If rank == 1, they see L1 price, but carrier name is masked
+            # If rank > 1, amounts and names are masked
+            rankings_out.append(
+                SupplierRankOut(
+                    rank=r["rank"],
+                    supplier_id=r["supplier_id"],
+                    supplier_name="L1 Leader (Masked)" if r["rank"] == 1 else f"Rank {r['rank']} (Masked)",
+                    supplier_code="L1" if r["rank"] == 1 else f"L{r['rank']}",
+                    total=r["total"] if r["rank"] == 1 else None,
+                    freight_charges=None,
+                    origin_charges=None,
+                    destination_charges=None,
+                    transit_time_days=None,
+                    quote_validity_date=None,
+                    carrier_name="Masked Carrier",
+                    bid_id=r["bid_id"],
+                    bid_created_at=r["bid_created_at"],
+                    is_current_user_supplier=False,
+                )
             )
-        )
+        else:
+            rankings_out.append(
+                SupplierRankOut(
+                    rank=r["rank"],
+                    supplier_id=r["supplier_id"],
+                    supplier_name=r["supplier_name"],
+                    supplier_code=r["supplier_code"],
+                    total=r["total"],
+                    freight_charges=r["freight_charges"],
+                    origin_charges=r["origin_charges"],
+                    destination_charges=r["destination_charges"],
+                    transit_time_days=r["transit_time_days"],
+                    quote_validity_date=r["quote_validity_date"],
+                    carrier_name=r["carrier_name"],
+                    bid_id=r["bid_id"],
+                    bid_created_at=r["bid_created_at"],
+                    is_current_user_supplier=is_my_rank,
+                )
+            )
 
     # Extensions
     extensions = (
@@ -305,7 +336,12 @@ def get_rfq(
     )
 
 
+class InvitationCreate(BaseModel):
+    supplier_id: str
+
+
 @router.put("/{rfq_id}", response_model=RFQDetailOut)
+@router.patch("/{rfq_id}", response_model=RFQDetailOut)
 def update_rfq(
     rfq_id: str,
     rfq_update: RFQUpdate,
@@ -371,6 +407,8 @@ def update_rfq(
             rfq.config.extension_minutes = rfq_update.extension_minutes
         if rfq_update.trigger_type is not None:
             rfq.config.trigger_type = rfq_update.trigger_type.value
+        if rfq_update.bid_visibility is not None:
+            rfq.config.bid_visibility = rfq_update.bid_visibility.value
 
     # Update invitations if supplied
     if rfq_update.invited_supplier_ids is not None:
@@ -380,6 +418,79 @@ def update_rfq(
 
     db.commit()
     db.refresh(rfq)
+
+    return get_rfq(rfq.id, db, current_user)
+
+
+@router.post("/{rfq_id}/invitations", response_model=RFQDetailOut, status_code=status.HTTP_201_CREATED)
+def add_invitation(
+    rfq_id: str,
+    payload: InvitationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_buyer),
+):
+    rfq = db.query(RFQ).filter((RFQ.id == rfq_id) | (RFQ.reference_id == rfq_id)).first()
+    if not rfq:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "RFQ_NOT_FOUND", "message": "RFQ not found"},
+        )
+
+    now = utc_now()
+    if rfq.status != RFQStatus.SCHEDULED.value or now >= rfq.bid_start:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "RFQ_LOCKED", "message": "Invitations cannot be modified once auction has started or closed"},
+        )
+
+    supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id).first()
+    if not supplier:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "SUPPLIER_NOT_FOUND", "message": "Supplier not found"},
+        )
+
+    existing = (
+        db.query(RFQInvitation)
+        .filter(RFQInvitation.rfq_id == rfq.id, RFQInvitation.supplier_id == payload.supplier_id)
+        .first()
+    )
+    if not existing:
+        db.add(RFQInvitation(rfq_id=rfq.id, supplier_id=payload.supplier_id))
+        db.commit()
+
+    return get_rfq(rfq.id, db, current_user)
+
+
+@router.delete("/{rfq_id}/invitations/{supplier_id}", response_model=RFQDetailOut)
+def remove_invitation(
+    rfq_id: str,
+    supplier_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_buyer),
+):
+    rfq = db.query(RFQ).filter((RFQ.id == rfq_id) | (RFQ.reference_id == rfq_id)).first()
+    if not rfq:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "RFQ_NOT_FOUND", "message": "RFQ not found"},
+        )
+
+    now = utc_now()
+    if rfq.status != RFQStatus.SCHEDULED.value or now >= rfq.bid_start:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "RFQ_LOCKED", "message": "Invitations cannot be modified once auction has started or closed"},
+        )
+
+    inv = (
+        db.query(RFQInvitation)
+        .filter(RFQInvitation.rfq_id == rfq.id, RFQInvitation.supplier_id == supplier_id)
+        .first()
+    )
+    if inv:
+        db.delete(inv)
+        db.commit()
 
     return get_rfq(rfq.id, db, current_user)
 

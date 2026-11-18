@@ -24,19 +24,35 @@ def test_auction_events_tamper_proof_trigger(db_session, buyer_user):
     db_session.commit()
 
     # Ensure trigger is installed
-    db_session.execute(text("""
-        CREATE OR REPLACE FUNCTION prevent_audit_tampering()
-        RETURNS TRIGGER AS $$
-        BEGIN
-            RAISE EXCEPTION 'MERIDIAN AUDIT VIOLATION: auction_events is append-only and tamper-proof. UPDATE and DELETE operations are strictly forbidden.';
-        END;
-        $$ LANGUAGE plpgsql;
+    if db_session.bind.dialect.name == "sqlite":
+        db_session.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS trg_prevent_audit_update
+            BEFORE UPDATE ON auction_events
+            BEGIN
+                SELECT RAISE(ABORT, 'auction_events is append-only');
+            END;
+        """))
+        db_session.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS trg_prevent_audit_delete
+            BEFORE DELETE ON auction_events
+            BEGIN
+                SELECT RAISE(ABORT, 'auction_events is append-only');
+            END;
+        """))
+    else:
+        db_session.execute(text("""
+            CREATE OR REPLACE FUNCTION prevent_audit_tampering()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                RAISE EXCEPTION 'MERIDIAN AUDIT VIOLATION: auction_events is append-only and tamper-proof. UPDATE and DELETE operations are strictly forbidden.';
+            END;
+            $$ LANGUAGE plpgsql;
 
-        DROP TRIGGER IF EXISTS trg_prevent_audit_tampering ON auction_events;
-        CREATE TRIGGER trg_prevent_audit_tampering
-        BEFORE UPDATE OR DELETE ON auction_events
-        FOR EACH ROW EXECUTE FUNCTION prevent_audit_tampering();
-    """))
+            DROP TRIGGER IF EXISTS trg_prevent_audit_tampering ON auction_events;
+            CREATE TRIGGER trg_prevent_audit_tampering
+            BEFORE UPDATE OR DELETE ON auction_events
+            FOR EACH ROW EXECUTE FUNCTION prevent_audit_tampering();
+        """))
     db_session.commit()
 
     try:

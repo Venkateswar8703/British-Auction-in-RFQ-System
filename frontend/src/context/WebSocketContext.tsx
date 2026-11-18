@@ -39,6 +39,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       socket.onopen = () => {
         setIsConnected(true);
+        // First-message authentication
+        if (token) {
+          socket.send(JSON.stringify({ action: 'AUTH', token }));
+        }
         // Request clock sync
         const clientSentMs = Date.now();
         socket.send(JSON.stringify({ action: 'CLOCK_SYNC', client_sent_ms: clientSentMs }));
@@ -54,10 +58,14 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           const payload: WebSocketAuctionPayload = JSON.parse(event.data);
           const clientReceiveMs = Date.now();
 
-          // Calculate server time offset
-          if (payload.server_time) {
+          // Calculate server time offset using offset = t_server + RTT/2 - t_client_receive
+          if (payload.event_type === 'CLOCK_SYNC' && (payload as any).client_sent_ms) {
+            const rtt = clientReceiveMs - (payload as any).client_sent_ms;
             const serverMs = new Date(payload.server_time).getTime();
-            // Offset = server_time - client_receive_time
+            const calculatedOffset = serverMs + (rtt / 2) - clientReceiveMs;
+            setClockOffsetMs(calculatedOffset);
+          } else if (payload.server_time) {
+            const serverMs = new Date(payload.server_time).getTime();
             const calculatedOffset = serverMs - clientReceiveMs;
             setClockOffsetMs(calculatedOffset);
           }

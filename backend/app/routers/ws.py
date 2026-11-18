@@ -1,5 +1,6 @@
 import logging
 import json
+import asyncio
 from typing import Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
@@ -20,16 +21,29 @@ router = APIRouter(tags=["WebSockets"])
 async def websocket_auction_endpoint(
     websocket: WebSocket, 
     rfq_id: str,
-    token: Optional[str] = Query(None)
+    token: Optional[str] = Query(None),
+    ticket: Optional[str] = Query(None),
 ):
-    # Security: WebSocket requires authentication
-    if not token:
+    auth_token = token or ticket
+    if not auth_token:
+        # First-message authentication flow
+        await websocket.accept()
+        try:
+            raw_init = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            init_json = json.loads(raw_init)
+            if init_json.get("action") == "AUTH":
+                auth_token = init_json.get("token") or init_json.get("ticket")
+        except Exception:
+            await websocket.close(code=4001, reason="Authentication timeout or invalid message")
+            return
+
+    if not auth_token:
         await websocket.close(code=4001, reason="Authentication token required")
         return
 
     try:
         payload = jwt.decode(
-            token,
+            auth_token,
             settings.JWT_SECRET,
             algorithms=[settings.JWT_ALGORITHM],
         )
@@ -75,7 +89,8 @@ async def websocket_auction_endpoint(
         await websocket.close(code=4001, reason="Invalid or expired token")
         return
 
-    await ws_manager.connect(rfq_id, websocket)
+    client_info = {"role": role, "supplier_id": supplier_id, "user_id": user_id}
+    await ws_manager.connect(rfq_id, websocket, client_info=client_info)
     try:
         while True:
             data_text = await websocket.receive_text()
