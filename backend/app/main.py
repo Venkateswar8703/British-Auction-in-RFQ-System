@@ -62,6 +62,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/health", tags=["Health"])
+@app.get("/api/v1/health", tags=["Health"])
+async def health_check():
+    from app.database import engine
+    from datetime import datetime, timezone
+    return {
+        "status": "healthy",
+        "service": "MERIDIAN Auction Engine",
+        "database": engine.dialect.name,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
 # Register custom exception handler for Domain Exceptions
 @app.exception_handler(MeridianException)
 async def meridian_exception_handler(request: Request, exc: MeridianException):

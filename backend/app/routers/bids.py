@@ -17,24 +17,24 @@ from app.services.websocket_manager import ws_manager
 
 router = APIRouter(prefix="/rfqs/{rfq_id}/bids", tags=["Bids"])
 
-# In-memory sliding window rate limiter: max 12 bids per second per supplier
+# In-memory sliding window rate limiter: max 30 bids per second per supplier
 _bid_timestamps = defaultdict(list)
 
-def check_bid_rate_limit(supplier_id: str, max_requests: int = 12, window_seconds: float = 1.0):
+def check_bid_rate_limit(supplier_id: str, max_requests: int = 30, window_seconds: float = 1.0):
     now = time.time()
     # Filter timestamps within window
     _bid_timestamps[supplier_id] = [t for t in _bid_timestamps[supplier_id] if now - t < window_seconds]
     if len(_bid_timestamps[supplier_id]) >= max_requests:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Rate limit exceeded. Maximum 12 quote submissions per second per carrier.",
+            detail="Rate limit exceeded. Maximum 30 quote submissions per second per carrier.",
             headers={"Retry-After": "1"}
         )
     _bid_timestamps[supplier_id].append(now)
 
 
 @router.post("", response_model=BidOut, status_code=status.HTTP_201_CREATED)
-async def submit_bid(
+def submit_bid(
     rfq_id: str,
     bid_in: BidCreate,
     response: Response,
@@ -113,7 +113,7 @@ async def submit_bid(
                 "is_clamped": result["extension"].is_clamped,
             }
 
-        await ws_manager.broadcast_to_rfq(
+        ws_manager.broadcast_to_rfq_sync(
             rfq_id=rfq_id,
             event_type="NEW_BID",
             data=broadcast_data,
@@ -143,12 +143,12 @@ def list_bids_for_rfq(
 
     bids_query = (
         db.query(Bid)
-        .filter(Bid.rfq_id == rfq_id)
+        .filter(Bid.rfq_id == rfq.id)
         .order_by(Bid.created_at.desc())
         .all()
     )
 
-    rankings = calculate_rankings(db, rfq_id)
+    rankings = calculate_rankings(db, rfq.id)
     rank_map = {r["supplier_id"]: r["rank"] for r in rankings}
 
     results = []

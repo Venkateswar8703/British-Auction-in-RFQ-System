@@ -306,7 +306,7 @@ def process_bid_submission(
     # 5. Invitation Validation
     invitation = (
         db.query(RFQInvitation)
-        .filter(RFQInvitation.rfq_id == rfq_id, RFQInvitation.supplier_id == supplier_id)
+        .filter(RFQInvitation.rfq_id == rfq.id, RFQInvitation.supplier_id == supplier_id)
         .first()
     )
     if not invitation:
@@ -324,7 +324,7 @@ def process_bid_submission(
     total = freight_charges + origin_charges + destination_charges
     latest_supplier_bid = (
         db.query(Bid)
-        .filter(Bid.rfq_id == rfq_id, Bid.supplier_id == supplier_id)
+        .filter(Bid.rfq_id == rfq.id, Bid.supplier_id == supplier_id)
         .order_by(Bid.created_at.desc())
         .first()
     )
@@ -335,14 +335,14 @@ def process_bid_submission(
             )
 
     # 8. Compute Pre-Bid Ranks and L1 State
-    current_rankings = calculate_rankings(db, rfq_id)
+    current_rankings = calculate_rankings(db, rfq.id)
     prev_ranks: Dict[str, int] = {r["supplier_id"]: r["rank"] for r in current_rankings}
     prev_l1_supplier_id = current_rankings[0]["supplier_id"] if current_rankings else None
     is_first_bid = len(current_rankings) == 0
 
     # 9. Insert the New Bid Record
     new_bid = Bid(
-        rfq_id=rfq_id,
+        rfq_id=rfq.id,
         supplier_id=supplier_id,
         submitted_by=user_id,
         freight_charges=freight_charges,
@@ -359,7 +359,7 @@ def process_bid_submission(
     db.flush()
 
     # 10. Recompute New Ranks
-    new_rankings = calculate_rankings(db, rfq_id)
+    new_rankings = calculate_rankings(db, rfq.id)
     new_ranks: Dict[str, int] = {r["supplier_id"]: r["rank"] for r in new_rankings}
     new_l1_supplier_id = new_rankings[0]["supplier_id"] if new_rankings else None
 

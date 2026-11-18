@@ -75,6 +75,18 @@ class WebSocketManager:
         for dead in dead_sockets:
             self.disconnect(rfq_id, dead)
 
+    def broadcast_to_rfq_sync(self, rfq_id: str, event_type: str, data: Dict[str, Any]):
+        """Thread-safe synchronous wrapper to broadcast from background threads to the main event loop."""
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.run_coroutine_threadsafe(self.broadcast_to_rfq(rfq_id, event_type, data), loop)
+            else:
+                loop.run_until_complete(self.broadcast_to_rfq(rfq_id, event_type, data))
+        except Exception as e:
+            logger.debug("Could not schedule sync broadcast: %s", e)
+
 
 ws_manager = WebSocketManager()
 

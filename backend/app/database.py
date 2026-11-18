@@ -15,11 +15,14 @@ if settings.DATABASE_URL.startswith("sqlite"):
     )
     connect_args = {"check_same_thread": False, "timeout": 30}
 
+engine_kwargs = {"echo": settings.ECHO_SQL, "pool_pre_ping": True}
+if not settings.DATABASE_URL.startswith("sqlite"):
+    engine_kwargs.update({"pool_size": 30, "max_overflow": 20})
+
 engine = create_engine(
     settings.DATABASE_URL,
     connect_args=connect_args,
-    echo=settings.ECHO_SQL,
-    pool_pre_ping=True,
+    **engine_kwargs,
 )
 
 # Enable Foreign Key enforcement in SQLite
