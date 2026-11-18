@@ -139,3 +139,4 @@ The application includes a **One-Click Fast Persona Switcher** on the Login page
 3. Open **Auction Listing**:
    - Scroll the table to verify the sticky header (`top: 48px`, background `#E9E6DA`) locks cleanly without overlapping rows.
    - Inspect the UN/LOCODE route labels (`SGSIN → AUMEL`) and hover over port tooltips.
+
