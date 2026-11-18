@@ -173,7 +173,7 @@ export const CommandCenter: React.FC = () => {
               -{summary.avg_price_reduction_pct}%
             </div>
             <p className="mt-2 text-xs font-mono text-meridian-muted">
-              1st quote to final L1
+              1st quote to final L1 · {summary.avg_extensions_per_auction || 0} avg. extensions
             </p>
           </div>
 

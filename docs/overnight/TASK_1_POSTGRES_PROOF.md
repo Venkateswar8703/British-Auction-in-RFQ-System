@@ -307,3 +307,4 @@ Verifies that:
 1. `get_rfq_with_lock` unconditionally applies `query.with_for_update()` under PostgreSQL dialect.
 2. If `with_for_update()` is removed from the query, the locking assertion fails (`was_locked is False`).
 Test Result: **PASS** (`backend/tests/test_concurrency.py::test_row_lock_with_for_update_proof PASSED`).
+

@@ -333,6 +333,13 @@ def process_bid_submission(
             raise BidNotLowerError(
                 f"New bid total (${total:,.2f}) must be strictly lower than your previous bid (${latest_supplier_bid.total:,.2f})"
             )
+        # Minimum bid decrement enforcement
+        if config.min_decrement and config.min_decrement > 0:
+            decrement = latest_supplier_bid.total - total
+            if decrement < config.min_decrement:
+                raise BidNotLowerError(
+                    f"New bid total (${total:,.2f}) must decrement by at least ${config.min_decrement:,.2f} below your previous bid (${latest_supplier_bid.total:,.2f}). Current reduction: ${decrement:,.2f}"
+                )
 
     # 8. Compute Pre-Bid Ranks and L1 State
     current_rankings = calculate_rankings(db, rfq.id)

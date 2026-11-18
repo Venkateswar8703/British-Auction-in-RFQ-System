@@ -36,6 +36,7 @@ export interface AuctionConfig {
   trigger_window_minutes: number;
   extension_minutes: number;
   trigger_type: TriggerType;
+  min_decrement?: number;
   created_at: string;
 }
 
@@ -152,6 +153,7 @@ export interface CommandCenterMetrics {
     total_bids: number;
     participating_suppliers: number;
     avg_price_reduction_pct: number;
+    avg_extensions_per_auction?: number;
   };
   upcoming_deadlines: Array<{
     id: string;

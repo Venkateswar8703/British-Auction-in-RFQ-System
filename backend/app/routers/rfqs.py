@@ -188,6 +188,7 @@ def create_rfq(
         trigger_window_minutes=rfq_in.trigger_window_minutes,
         extension_minutes=rfq_in.extension_minutes,
         trigger_type=rfq_in.trigger_type.value,
+        min_decrement=rfq_in.min_decrement or Decimal("0.00"),
     )
     db.add(config)
 

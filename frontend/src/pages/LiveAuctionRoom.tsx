@@ -155,15 +155,7 @@ export const LiveAuctionRoom: React.FC = () => {
         });
       } else if (event_type === 'RECONNECTED') {
         // Full state resync after socket connection drop
-        if (rfqId) {
-          api.getRfq(rfqId).then((fullRfq) => {
-            setRfq(fullRfq);
-            if (fullRfq.rankings) setRankings(fullRfq.rankings);
-          }).catch(() => {});
-          api.listBids(rfqId).then((bidsData) => {
-            setBids(bidsData);
-          }).catch(() => {});
-        }
+        loadRfqData();
       }
     });
 

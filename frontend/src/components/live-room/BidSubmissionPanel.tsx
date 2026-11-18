@@ -206,6 +206,13 @@ export const BidSubmissionPanel: React.FC<BidSubmissionPanelProps> = ({
         </button>
       </div>
 
+      {rfq.config?.min_decrement && Number(rfq.config.min_decrement) > 0 && (
+        <div className="text-[11px] font-mono text-meridian-ink bg-meridian-surfaceDeep border border-meridian-line px-3 py-1.5 mb-3 flex items-center justify-between">
+          <span className="text-meridian-muted uppercase tracking-wider">Required Min Decrement:</span>
+          <span className="font-bold tabular-nums text-meridian-ink">${Number(rfq.config.min_decrement).toFixed(2)}</span>
+        </div>
+      )}
+
       <form onSubmit={handlePromptSubmit} className="space-y-4 font-mono text-xs">
         {/* Cost breakdown inputs */}
         <div className="grid grid-cols-3 gap-3">

@@ -106,3 +106,4 @@ Supplier_Portal    | 390px      | 60,113             | PASS
 ```
 
 **Status**: PASS
+

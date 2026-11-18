@@ -26,6 +26,7 @@ export const CreateEditRfq: React.FC = () => {
   const [triggerWindowMinutes, setTriggerWindowMinutes] = useState<number>(10);
   const [extensionMinutes, setExtensionMinutes] = useState<number>(5);
   const [triggerType, setTriggerType] = useState<TriggerType>('L1_CHANGE');
+  const [minDecrement, setMinDecrement] = useState<string>('0');
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [invitedSupplierIds, setInvitedSupplierIds] = useState<string[]>([]);
@@ -135,6 +136,7 @@ export const CreateEditRfq: React.FC = () => {
       trigger_window_minutes: Number(triggerWindowMinutes),
       extension_minutes: Number(extensionMinutes),
       trigger_type: triggerType,
+      min_decrement: Number(minDecrement) || 0,
       invited_supplier_ids: invitedSupplierIds,
     };
 
@@ -424,6 +426,23 @@ export const CreateEditRfq: React.FC = () => {
                   <option value="ANY_RANK_CHANGE">ANY_RANK_CHANGE (Any Rank Shifts)</option>
                   <option value="BID_RECEIVED">BID_RECEIVED (Any Bid In Window)</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-mono uppercase tracking-[0.08em] text-meridian-muted block mb-1">
+                  Min Decrement ($)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={minDecrement}
+                  onChange={(e) => setMinDecrement(e.target.value)}
+                  className="input-underlined w-full font-mono text-xs font-bold"
+                />
+                <span className="text-[10px] text-meridian-muted font-mono mt-1 block">
+                  Optional minimum bid reduction
+                </span>
               </div>
             </div>
           </div>

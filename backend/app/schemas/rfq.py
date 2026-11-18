@@ -11,6 +11,7 @@ class AuctionConfigBase(BaseModel):
     trigger_window_minutes: int = Field(default=10, gt=0, description="X: Trigger window in minutes")
     extension_minutes: int = Field(default=5, gt=0, description="Y: Extension duration in minutes")
     trigger_type: TriggerType = Field(default=TriggerType.L1_CHANGE)
+    min_decrement: Optional[Decimal] = Field(default=Decimal("0.00"), ge=0, description="Optional minimum bid decrement")
 
 
 class AuctionConfigOut(AuctionConfigBase):
@@ -59,6 +60,7 @@ class RFQCreate(BaseModel):
     trigger_window_minutes: int = Field(default=10, gt=0)
     extension_minutes: int = Field(default=5, gt=0)
     trigger_type: TriggerType = Field(default=TriggerType.L1_CHANGE)
+    min_decrement: Optional[Decimal] = Field(default=Decimal("0.00"), ge=0)
     invited_supplier_ids: List[str] = Field(default_factory=list)
 
     @model_validator(mode="after")

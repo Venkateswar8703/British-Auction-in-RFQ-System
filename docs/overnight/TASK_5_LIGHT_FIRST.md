@@ -54,3 +54,4 @@ Every screen across MERIDIAN adheres strictly to the light-first editorial aesth
 - 100% compliance with WCAG AA accessibility standards.
 
 **Status**: PASS
+

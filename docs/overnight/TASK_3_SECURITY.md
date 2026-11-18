@@ -88,3 +88,4 @@ ALL 7 SECURITY CRITERIA VERIFIED AND PASSED!
    `bcrypt.hashpw(password.encode("utf-8")[:72], bcrypt.gensalt(rounds=12))` ensures slow, memory-hard hashing resistant to GPU cracking.
 
 **Status**: PASS
+

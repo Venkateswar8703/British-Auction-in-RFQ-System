@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
@@ -123,6 +124,7 @@ class AuctionConfig(Base):
     trigger_window_minutes = Column(Integer, nullable=False, default=10)
     extension_minutes = Column(Integer, nullable=False, default=5)
     trigger_type = Column(String(30), nullable=False, default=TriggerType.L1_CHANGE.value)
+    min_decrement = Column(Numeric(12, 2), nullable=True, default=Decimal("0.00"))
     created_at = Column(TZDateTime, default=utc_now, nullable=False)
     updated_at = Column(TZDateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
